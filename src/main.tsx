@@ -43,6 +43,7 @@ class ErrorBoundary extends React.Component<
 
 function ProtectedApp() {
   const { user, allowed, loading } = useAuth()
+  console.log('ProtectedApp:', { hasUser: !!user, allowed, loading })
 
   if (loading) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: '"Noto Sans SC", sans-serif', color: '#999' }}>加载中...</div>

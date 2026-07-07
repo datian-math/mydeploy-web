@@ -40,11 +40,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   async function checkAllowed(userId: string) {
-    const { data } = await supabase
+    console.log('Auth: checking allowed for', userId)
+    const { data, error } = await supabase
       .from('math_allowed_users')
       .select('user_id')
       .eq('user_id', userId)
       .single()
+    console.log('Auth: allowed result', !!data, error ? error.message : '')
     setAllowed(!!data)
   }
 
