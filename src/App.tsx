@@ -1286,7 +1286,8 @@ export default function App() {
           <nav style={{ display: 'flex', gap: 4 }}>
             {[
               { key: 'bank', label: '试题库' },
-              { key: 'basket', label: `组卷 (${basket.length})` },
+              { key: 'composer', label: '✨ 新版组卷' },
+              { key: 'basket', label: `旧版组卷 (${basket.length})` },
               { key: 'about', label: '关于' }
             ].map(tab => (
               <button
