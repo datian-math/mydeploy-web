@@ -1286,12 +1286,7 @@ export default function App() {
           <nav style={{ display: 'flex', gap: 4 }}>
             {[
               { key: 'bank', label: '试题库' },
-              { key: 'editor', label: '录入试题' },
-              { key: 'import', label: '批量录题' },
-              { key: 'pdf-batch', label: '📄 PDF录题' },
-              { key: 'basket', label: `旧版组卷 (${basket.length})` },
-              { key: 'composer', label: '✨ 新版组卷' },
-              { key: 'papers', label: '已下载的试卷' },
+              { key: 'basket', label: `组卷 (${basket.length})` },
               { key: 'about', label: '关于' }
             ].map(tab => (
               <button
