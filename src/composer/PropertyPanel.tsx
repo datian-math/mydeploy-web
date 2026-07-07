@@ -1,5 +1,6 @@
 import React from 'react';
-import { ComposerQuestion, QuestionStyle, DEFAULT_STYLE, PaperSettings, DEFAULT_PAPER } from './types';
+import type { ComposerQuestion, QuestionStyle, PaperSettings } from './types';
+import { DEFAULT_STYLE, DEFAULT_PAPER } from './types';
 
 interface PropertyPanelProps {
   selectedQuestion: ComposerQuestion | null;

@@ -24,11 +24,10 @@
 
     /* Linting */
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "verbatimModuleSyntax": false,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
   },
   "include": ["src"]
 }

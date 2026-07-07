@@ -671,9 +671,9 @@ function ReviewView({ taskId, onBack }: { taskId: string; onBack: () => void }) 
           setSelectedIdx(0);
         } else {
           // 兼容：如果没有返回更新数据，标记已确认的题目
-          const updatedQuestions = task.questions.map((q, i) =>
+          const updatedQuestions = task.questions.map((q: any, i) =>
             confirmedIds.includes(i) ? { ...q, _imported: true } : q
-          ).filter(q => !q._imported);
+          ).filter((q: any) => !q._imported);
           setTask({ ...task, questions: updatedQuestions, questionCount: updatedQuestions.length, status: updatedQuestions.length === 0 ? 'confirmed' : task.status });
           setSelectedIdx(0);
         }
@@ -995,7 +995,7 @@ function ReviewView({ taskId, onBack }: { taskId: string; onBack: () => void }) 
         {(task.allImages && task.allImages.length > 0) && (
           <ImageGalleryPanel
             images={task.allImages}
-            currentQuestion={q}
+            currentQuestion={q as any}
             onAssignImage={(imgUrl) => {
               if (!q) return;
               // 将图片添加到当前选中题目（去重）

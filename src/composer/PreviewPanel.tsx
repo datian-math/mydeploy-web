@@ -1,5 +1,5 @@
 import React from 'react';
-import { ComposerQuestion, PaperSettings } from './types';
+import type { ComposerQuestion, PaperSettings } from './types';
 
 interface PreviewPanelProps {
   questions: ComposerQuestion[];
