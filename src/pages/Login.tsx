@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 
 export default function Login() {
@@ -6,7 +7,15 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const { signIn } = useAuth()
+  const { signIn, user, allowed, loading: authLoading } = useAuth()
+  const navigate = useNavigate()
+
+  // Auto-redirect when logged in
+  useEffect(() => {
+    if (!authLoading && user && allowed) {
+      navigate('/', { replace: true })
+    }
+  }, [authLoading, user, allowed, navigate])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
