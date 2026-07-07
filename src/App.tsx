@@ -2459,10 +2459,10 @@ export default function App() {
           <div style={{ maxWidth: 600, margin: '0 auto' }}>
             <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 32, textAlign: 'center' }}>
               <div style={{ fontSize: 64, marginBottom: 16 }}>∑</div>
-              <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>数学试题库</h2>
+              <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>田随林用AI打造的数学试题库</h2>
               <p style={{ color: '#666', lineHeight: 1.8, marginBottom: 24 }}>
-                专为高中数学教师打造的试题管理系统。<br/>
-                支持 LaTeX 公式录入、知识点分类、多维度筛选、试卷组卷。
+                专为热爱数学的老师和同学免费服务！<br/>
+                支持快速组卷，一键导出！祝大家天天进步！
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginTop: 32 }}>
                 <div style={{ padding: 16, background: '#f9f9f9', borderRadius: 8 }}>
