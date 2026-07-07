@@ -1,0 +1,679 @@
+/* ====== 新版组卷器 - 三栏布局 ====== */
+
+.composer-wrapper {
+  display: flex;
+  height: calc(100vh - 60px);
+  overflow: hidden;
+  background: #f5f5f5;
+}
+
+/* ====== 左侧栏：选题篮 ====== */
+.composer-left {
+  width: 240px;
+  min-width: 200px;
+  background: #fff;
+  border-right: 0.5px solid #e8e8e4;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.composer-left-header {
+  padding: 12px 16px;
+  border-bottom: 0.5px solid #e8e8e4;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.composer-left-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+/* ===== 题型分组 ===== */
+.basket-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.basket-group {
+  border: 0.5px solid #e8e8e4;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.basket-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 0.5px solid;
+  font-size: 13px;
+}
+
+.basket-group-body {
+  padding: 4px;
+}
+
+/* 题目项 */
+.basket-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  background: #fff;
+}
+
+.basket-item:hover {
+  background: #f8f6ff;
+}
+
+.basket-item.selected {
+  background: #eeedfe;
+  outline: 1.5px solid #534AB7;
+  outline-offset: -1.5px;
+}
+
+.basket-item .item-index {
+  font-size: 11px;
+  font-weight: 600;
+  color: #534AB7;
+  min-width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+  background: #f0eeff;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+.basket-item .item-content-preview {
+  flex: 1;
+  font-size: 12px;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 拖拽手柄 */
+.basket-item .drag-handle {
+  color: #ccc;
+  font-size: 14px;
+  cursor: grab;
+  flex-shrink: 0;
+  padding: 2px 2px;
+  line-height: 1;
+  user-select: none;
+  letter-spacing: -1px;
+}
+
+.basket-item .drag-handle:hover {
+  color: #888;
+}
+
+.basket-item:active .drag-handle {
+  cursor: grabbing;
+}
+
+/* 拖拽悬停高亮 */
+.basket-item.drag-over {
+  background: #eeedfe;
+  border: 1.5px dashed #534AB7;
+  outline: none;
+}
+
+/* 操作按钮区 */
+.item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.basket-item .item-remove {
+  color: #ccc;
+  cursor: pointer;
+  font-size: 16px;
+  flex-shrink: 0;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+  margin-left: 2px;
+}
+
+.basket-item .item-remove:hover {
+  color: #c33;
+  background: #fee;
+}
+
+.basket-empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: #999;
+  font-size: 13px;
+}
+
+/* ====== 中间栏：WYSIWYG 试卷预览 ====== */
+.composer-center {
+  flex: 1;
+  background: #e0dfdb;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.composer-center-toolbar {
+  padding: 8px 16px;
+  background: #fff;
+  border-bottom: 0.5px solid #e8e8e4;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.composer-center-preview {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+}
+
+/* A4 连续纸张（不固定高度，自然流） */
+.paper-sheet {
+  width: 880px;
+  min-height: 1123px;
+  background: #fff;
+  box-shadow: 0 2px 20px rgba(0,0,0,0.12);
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #333;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* 每隔 1123px 画一条虚线模拟 A4 分页线（用 CSS repeating-linear-gradient） */
+/* 注：这是一个视觉辅助，不影响内容布局 */
+.paper-sheet::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 1122px,
+    #e0d9ff 1122px,
+    #e0d9ff 1123px
+  );
+  z-index: 1;
+}
+
+.paper-sheet-content {
+  flex: 1;
+  padding: 16px 36px;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* 强制换页线（屏幕可见，打印时 break） */
+.forced-page-break {
+  width: 100%;
+  margin: 16px 0 4px;
+  text-align: center;
+  border-top: 2px dashed #f5a623;
+  padding-top: 6px;
+  font-size: 11px;
+  color: #f5a623;
+  letter-spacing: 2px;
+  break-before: page;     /* 打印时强制换页 */
+  page-break-before: always;
+}
+
+/* 旧版 A4 纸张分页（兼容保留） */
+.paper-page {
+  width: 794px;
+  min-height: 1123px;
+  max-height: 1123px;
+  background: #fff;
+  box-shadow: 0 2px 20px rgba(0,0,0,0.12);
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #333;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.paper-page-header {
+  text-align: center;
+  padding: 30px 48px 12px;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.paper-page-header .header-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+/* 后续页面的简化页眉 */
+.paper-page-header-minimal {
+  padding: 16px 48px 10px;
+  border-bottom: 0.5px solid #ddd;
+  flex-shrink: 0;
+}
+
+.paper-page-header-minimal .header-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #666;
+}
+
+.paper-page-content {
+  flex: 1;
+  padding: 16px 48px;
+  overflow: hidden;
+}
+
+.paper-page-footer,
+.paper-sheet .paper-page-footer {
+  text-align: center;
+  font-size: 12px;
+  color: #999;
+  padding: 12px 48px;
+  border-top: 0.5px solid #e8e8e4;
+  flex-shrink: 0;
+}
+
+.paper-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 4px 0;
+}
+
+.paper-subtitle {
+  font-size: 14px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.paper-section-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 20px 0 12px;
+  padding-bottom: 4px;
+  border-bottom: 0.5px solid #ddd;
+}
+
+/* ===== CSS Grid 选项排版 ===== */
+.preview-options {
+  display: grid;
+  gap: 6px 16px;
+  margin-top: 8px;
+  padding-left: 24px;
+}
+
+.preview-options.grid-col-4 {
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+}
+
+.preview-options.grid-col-2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.preview-options.grid-col-1 {
+  grid-template-columns: 1fr;
+}
+
+.option-item {
+  font-size: inherit;
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* 填空题下划线 */
+.fillin-blank {
+  display: inline-block;
+  width: 3em;
+  border-bottom: 1.5px solid currentColor;
+  vertical-align: text-bottom;
+  margin: 0 2px;
+}
+
+/* 题号样式 */
+.question-number {
+  margin-right: 6px;
+  font-size: inherit;
+}
+
+/* 题目块 - 平铺在试卷上，无卡片感 */
+.composer-center-preview .paper-page-content .question-block,
+.composer-center-preview .paper-sheet-content .question-block {
+  border-bottom: 0.5px dashed #e0e0e0;
+  background: transparent !important;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.composer-center-preview .paper-page-content .question-block:last-child,
+.composer-center-preview .paper-sheet-content .question-block:last-child {
+  border-bottom: none;
+}
+
+/* 图片不超出卡片边界 */
+.composer-center-preview .paper-page-content .question-block img,
+.composer-center-preview .paper-sheet-content .question-block img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 强制 MathJax 渲染元素背景透明，防止灰底 */
+.composer-center-preview .paper-page-content .question-block .mjx-chtml,
+.composer-center-preview .paper-page-content .question-block .mjx-math,
+.composer-center-preview .paper-page-content .question-block .mjx-container,
+.composer-center-preview .paper-page-content .question-block mjx-container,
+.composer-center-preview .paper-page-content .question-block .mjx-chtml *,
+.composer-center-preview .paper-sheet-content .question-block .mjx-chtml,
+.composer-center-preview .paper-sheet-content .question-block .mjx-math,
+.composer-center-preview .paper-sheet-content .question-block .mjx-container,
+.composer-center-preview .paper-sheet-content .question-block mjx-container,
+.composer-center-preview .paper-sheet-content .question-block .mjx-chtml * {
+  background: transparent !important;
+}
+
+/* 图片容器 */
+.question-image-wrapper {
+  margin: 10px 0;
+}
+
+.question-image-wrapper img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* ===== 答案区 ===== */
+.answer-inline {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-left: 3px solid #534AB7;
+  border-radius: 0 6px 6px 0;
+  font-size: 13px;
+  color: #444;
+}
+
+.answer-section-end {
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 2px solid #333;
+}
+
+/* 页脚 */
+.paper-footer {
+  text-align: center;
+  font-size: 12px;
+  color: #999;
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 0.5px solid #e8e8e4;
+}
+
+/* ====== 右侧栏：属性配置 ====== */
+.composer-right {
+  width: 260px;
+  min-width: 220px;
+  background: #fff;
+  border-left: 0.5px solid #e8e8e4;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.composer-right-header {
+  padding: 12px 16px;
+  border-bottom: 0.5px solid #e8e8e4;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.composer-right-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.property-group {
+  margin-bottom: 16px;
+}
+
+.property-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 0.5px solid #eee;
+}
+
+.property-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.property-row label {
+  color: #555;
+  flex-shrink: 0;
+  min-width: 60px;
+}
+
+.property-row select,
+.property-row input[type="number"],
+.property-row input[type="text"] {
+  width: 130px;
+  padding: 4px 8px;
+  border: 0.5px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.property-row input[type="color"] {
+  width: 40px;
+  height: 28px;
+  border: 0.5px solid #ddd;
+  border-radius: 4px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.property-row .toggle {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.property-row .toggle.on  { background: #534AB7; }
+.property-row .toggle.off { background: #ccc; }
+
+.property-row .toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.2s;
+}
+
+.property-row .toggle.on::after  { left: 22px; }
+.property-row .toggle.off::after { left: 2px; }
+
+.property-empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: #999;
+  font-size: 13px;
+}
+
+/* 分页视觉提示 */
+.page-break-visual {
+  border-top: 2px dashed #ccc;
+  margin: 8px 0 16px;
+  position: relative;
+  height: 0;
+}
+
+.page-break-visual::before {
+  content: '—— 分页 ——';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  padding: 0 12px;
+  font-size: 11px;
+  color: #999;
+  white-space: nowrap;
+}
+
+/* 空白区域 */
+.blank-space {
+  border-bottom: 1px dotted #ddd;
+  margin: 8px 0;
+}
+
+/* ===== 样式模板 ===== */
+.template-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.template-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1.5px solid;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+  background: #fff;
+}
+
+.template-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.template-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.template-name {
+  color: #444;
+  font-weight: 500;
+}
+
+.template-copy-all {
+  width: 100%;
+  padding: 6px 10px;
+  border: 0.5px solid #ddd;
+  border-radius: 6px;
+  background: #f8f8f8;
+  color: #555;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.template-copy-all:hover:not(:disabled) {
+  background: #eee;
+  border-color: #bbb;
+}
+
+.template-copy-all:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 导出按钮区 */
+.composer-right-footer {
+  padding: 12px 16px;
+  border-top: 0.5px solid #e8e8e4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-export {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-export:hover { opacity: 0.9; }
+
+.btn-export-primary {
+  background: #534AB7;
+  color: #fff;
+}
+
+.btn-export-secondary {
+  background: #e3f2fd;
+  color: #1976d2;
+  border: 0.5px solid #1976d2;
+}
+
+.btn-export-pptx {
+  background: #fff3e0;
+  color: #e65100;
+  border: 0.5px solid #e65100;
+}

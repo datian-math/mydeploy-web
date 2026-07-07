@@ -1,0 +1,21 @@
+/* App.css - 大田的数学空间专用样式 */
+
+/* 全局盒模型 */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* KaTeX 公式样式覆盖 */
+.katex {
+  font-size: 1.1em !important;
+}
+
+/* 平滑滚动 */
+html {
+  scroll-behavior: smooth;
+}
+
+/* 选择文本颜色 */
+::selection {
+  background: rgba(83, 74, 183, 0.2);
+}

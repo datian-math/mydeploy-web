@@ -1,0 +1,803 @@
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import BasketPanel from './BasketPanel';
+import './Composer.css';
+
+// ====== 类型定义 ======
+interface QuestionStyle {
+  fontSize: number;
+  fontColor: string;
+  bold: boolean;
+  hasBorder: boolean;
+  borderColor: string;
+  optionLayout: 'horizontal-4' | 'horizontal-2' | 'vertical';
+  imageWidth: string;
+  imageAlign: 'left' | 'center' | 'right';
+  blankLines: number;
+  pageBreak: boolean;
+}
+
+const DEFAULT_STYLE: QuestionStyle = {
+  fontSize: 14,
+  fontColor: '#333333',
+  bold: false,
+  hasBorder: false,
+  borderColor: '#f5a623',
+  optionLayout: 'horizontal-4',
+  imageWidth: '50%',
+  imageAlign: 'center',
+  blankLines: 0,
+  pageBreak: false,
+};
+
+interface PaperSettings {
+  title: string;
+  subtitle: string;
+  headerLeft: string;
+  headerRight: string;
+  answerMode: 'none' | 'afterEach' | 'atEnd';
+}
+
+const DEFAULT_PAPER: PaperSettings = {
+  title: '数学试卷',
+  subtitle: '（考试时间：120分钟  满分：150分）',
+  headerLeft: '姓名：__________',
+  headerRight: '得分：__________',
+  answerMode: 'none',
+};
+
+interface ComposerItem {
+  questionId: string;
+  order: number;
+  style: QuestionStyle;
+  rawQuestion: any;
+}
+
+interface Props {
+  questions: any[];
+  basketIds: string[];
+  onBasketChange: (ids: string[]) => void;
+  onClearBasket?: () => void;
+  apiBase: string;
+}
+
+// ====== 简化版 LaTeX 预处理 ======
+function preprocessLatex(latex: string, _questionType?: string): string {
+  if (!latex || typeof latex !== 'string') return '';
+  const seenImgs = new Set<string>();
+  latex = latex.replace(/\\img[\{\[]\s*([^\}\]\s]+)\s*[\}\]]?/g, (match, key) => {
+    if (seenImgs.has(key)) return '';
+    seenImgs.add(key);
+    return match;
+  });
+  return latex
+    .replace(/\\begin\{choices\}/g, '')
+    .replace(/\\end\{choices\}/g, '')
+    .replace(/\\begin\{task\}/g, '')
+    .replace(/\\end\{task\}/g, '')
+    .replace(/\\begin\{solution\}/g, '')
+    .replace(/\\end\{solution\}/g, '')
+    .replace(/\\begin\{answer\}/g, '')
+    .replace(/\\end\{answer\}/g, '')
+    .replace(/\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/g, '\\img{$1}')
+    .replace(/\\paren\{([^}]*)\}/g, '($1)')
+    .replace(/\\sqpar\{([^}]*)\}/g, '[$1]')
+    .replace(/\\abs\{([^}]*)\}/g, '|$1|')
+    .replace(/\\floor\{([^}]*)\}/g, '\u230A$1\u230B')
+    .replace(/\\ceil\{([^}]*)\}/g, '\u2308$1\u2309')
+    .replace(/\\RR/g, '\\mathbb{R}')
+    .replace(/\\NN/g, '\\mathbb{N}')
+    .replace(/\\ZZ/g, '\\mathbb{Z}')
+    .replace(/\\QQ/g, '\\mathbb{Q}')
+    .replace(/\\CC/g, '\\mathbb{C}')
+    .replace(/\\grad/g, '\\nabla')
+    .replace(/\\fillin(\[[^\]]*\])?\{([^}]*)\}/g, '\\underline{\\qquad}')
+    .replace(/\\underline\{\\hspace\*?\{[^}]*\}\}/g, '\\underline{\\qquad}')
+    .replace(/\\underline\{\s*\}/g, '\\underline{\\qquad}');
+}
+
+function ensureMathDelimiters(text: string): string {
+  const lines = text.split('\n');
+  const result: string[] = [];
+  let displayGroup: string[] = [];
+
+  const flushDisplayGroup = () => {
+    if (displayGroup.length === 0) return;
+    if (displayGroup.length === 1) {
+      result.push(`\\[${displayGroup[0]}\\]`);
+    } else {
+      const hasAlignment = displayGroup.some(l => /&/.test(l));
+      if (hasAlignment) {
+        result.push(`\\[\\begin{aligned}\n${displayGroup.join('\n')}\n\\end{aligned}\\]`);
+      } else {
+        result.push(`\\[${displayGroup.join(' \\\\n')}\\]`);
+      }
+    }
+    displayGroup = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || /<[a-z][^>]*>/i.test(trimmed)) {
+      flushDisplayGroup();
+      result.push(line);
+      continue;
+    }
+    if ((trimmed.startsWith('\\(') && trimmed.endsWith('\\)')) ||
+        (trimmed.startsWith('\\[') && trimmed.endsWith('\\]')) ||
+        (trimmed.startsWith('$$') && trimmed.endsWith('$$'))) {
+      flushDisplayGroup();
+      result.push(line);
+      continue;
+    }
+    if (/\\\\\(/.test(trimmed) && /\\\\\)/.test(trimmed)) {
+      flushDisplayGroup();
+      result.push(line);
+      continue;
+    }
+    if (/\\\\\[/.test(trimmed) && /\\\\\]/.test(trimmed)) {
+      flushDisplayGroup();
+      result.push(line);
+      continue;
+    }
+    const hasMathCommand = /\\(because|therefore|frac|sqrt|sin|cos|tan|alpha|beta|gamma|delta|pi|cdot|left|right|geq|leq|neq|pm|times|overrightarrow|vec|mathbf|mathbb|text|tfrac|dfrac|sum|prod|int|lim|infty|partial|nabla|overline|underline|bar|hat|tilde|dot|ddot|quad|qquad)/.test(trimmed);
+    if (!hasMathCommand) {
+      flushDisplayGroup();
+      result.push(line);
+      continue;
+    }
+    const hasAlignment = /&/.test(trimmed);
+    const hasDisplayEnv = /\\begin\{(aligned|cases|matrix|bmatrix|pmatrix|array|gather|align|alignat|flalign|multline)\}/.test(trimmed);
+    const hasLineBreak = /\\\\\\\\/.test(trimmed);
+    if (hasDisplayEnv || hasAlignment || hasLineBreak) {
+      displayGroup.push(trimmed);
+    } else {
+      flushDisplayGroup();
+      result.push(`\\(${trimmed}\\)`);
+    }
+  }
+  flushDisplayGroup();
+  return result.join('\n');
+}
+
+// ====== MathJax 渲染组件 ======
+function MathJaxBlock({ html, key_, style, isSelected, onClick }: {
+  html: string;
+  key_: string;
+  style: QuestionStyle;
+  isSelected: boolean;
+  onClick?: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let timer: number;
+    const checkReady = () => {
+      if ((window as any).MathJax?.typesetPromise) {
+        setReady(true);
+      } else {
+        timer = window.setTimeout(checkReady, 200);
+      }
+    };
+    checkReady();
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!containerRef.current || !ready) return;
+    try {
+      containerRef.current.innerHTML = html;
+      (window as any).MathJax.typesetPromise([containerRef.current]).catch((err: any) => {
+        console.error('MathJax typeset error:', err);
+      });
+    } catch (err: any) {
+      console.error('MathJaxBlock render error:', err);
+    }
+  }, [html, ready]);
+
+  return (
+    <div
+      ref={containerRef}
+      id={`qblock-${key_}`}
+      onClick={onClick}
+      style={{
+        padding: '10px 14px',
+        borderRadius: style.hasBorder ? 8 : 4,
+        cursor: onClick ? 'pointer' : 'default',
+        fontSize: style.fontSize,
+        color: style.fontColor,
+        fontWeight: style.bold ? 700 : 400,
+        border: isSelected ? '2px solid #534AB7' : style.hasBorder ? `1px solid ${style.borderColor}` : '1px solid transparent',
+        background: '#fff',
+        transition: 'all 0.15s',
+        marginBottom: 12,
+        lineHeight: 1.8,
+      }}
+    />
+  );
+}
+
+// ====== 构建单题完整 HTML ======
+function buildQuestionHTML(
+  item: ComposerItem,
+  questionNumber: number,
+  apiBase: string,
+  paperSettings: PaperSettings,
+): string {
+  const q = item.rawQuestion;
+  const style = item.style;
+
+  let html = '';
+
+  // 分页视觉提示
+  if (style.pageBreak) {
+    html += '<div class="page-break-visual"></div>';
+  }
+
+  // 预处理 LaTeX
+  let body = preprocessLatex(q.content || q.title || '', q.type);
+  body = ensureMathDelimiters(body);
+
+  // 处理 \img{key} -> <img>
+  body = body.replace(/\\img[\{\[]\s*([^\}\]\s]+)\s*[\}\]]?/g, (_match: string, key: string) => {
+    const images = q.images || {};
+    const url = images[key];
+    let fullUrl: string;
+    if (url) {
+      fullUrl = url.startsWith('http') ? url : `${apiBase}${url.startsWith('/') ? '' : '/'}${url}`;
+    } else {
+      fullUrl = `${apiBase}/uploads/images/${key}`;
+    }
+    const w = style.imageWidth;
+    const align = style.imageAlign;
+    return `<div class="question-image-wrapper" style="display:flex;justify-content:${align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center'};margin:10px 0;"><img src="${fullUrl}" alt="diagram" onerror="this.style.display='none';var s=this.nextElementSibling;if(s)s.style.display='block';" style="display:block;max-width:${w};height:auto;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1);" /><span style="display:none;color:#e74c3c;font-size:12px;padding:8px 0;">[图片: ${key} 未找到]</span></div>`;
+  });
+
+  // 处理 \underline
+  body = body.replace(/\\underline\{\\qquad\}/g, '<span class="fillin-blank"></span>');
+  body = body.replace(/\\underline\{\\hspace\*?\{[^}]*\}\}/g, '<span class="fillin-blank"></span>');
+  body = body.replace(/\\underline\{\s*\}/g, '<span class="fillin-blank"></span>');
+
+  // 换行处理
+  body = body.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
+  if (!body.startsWith('<p>')) body = `<p>${body}</p>`;
+
+  // 题号 + 题干
+  html += `<p><strong class="question-number">${questionNumber}.</strong>${body.replace(/^<p>/, '').replace(/<\/p>$/, '')}</p>`;
+
+  // 选项（CSS Grid 排版）
+  if (q.options && q.options.length > 0 && (q.type === '单选' || q.type === '多选')) {
+    const cols = style.optionLayout === 'horizontal-4' ? 4 : style.optionLayout === 'horizontal-2' ? 2 : 1;
+    html += `<div class="preview-options grid-col-${cols}">`;
+    q.options.forEach((opt: string, oi: number) => {
+      const letter = String.fromCharCode(65 + oi);
+      let optProcessed = preprocessLatex(opt, q.type);
+      optProcessed = ensureMathDelimiters(optProcessed);
+      html += `<span class="option-item">${letter}. ${optProcessed}</span>`;
+    });
+    html += '</div>';
+  }
+
+  // 答案显示（每题后）
+  if (paperSettings.answerMode === 'afterEach') {
+    const answer = q.answer || q.answerContent || '';
+    let analysis = preprocessLatex(q.analysis || '', q.type);
+    analysis = ensureMathDelimiters(analysis);
+    html += `<div class="answer-inline"><strong>【答案】</strong>${answer}`;
+    if (analysis) html += `<br><strong>【解析】</strong>${analysis}`;
+    html += '</div>';
+  }
+
+  // 空白行
+  if (style.blankLines > 0) {
+    html += `<div style="height:${style.blankLines * 1.5}em;" class="blank-space"></div>`;
+  }
+
+  return html;
+}
+
+// ====== 估算题目高度（用于分页） ======
+function estimateQuestionHeight(item: ComposerItem): number {
+  const q = item.rawQuestion;
+  let h = 80; // 基础高度
+  const content = q.content || q.title || '';
+  h += Math.max(0, Math.ceil(content.length / 50) - 1) * 28; // 文字行高
+  if (q.options && q.options.length > 0) {
+    h += q.options.length * 32; // 选项高度
+  }
+  if (q.images && Object.keys(q.images).length > 0) {
+    h += 140; // 图片高度
+  }
+  h += item.style.blankLines * 24; // 空白行
+  if (item.style.pageBreak) h += 30; // 分页提示
+  return h;
+}
+
+// ====== 分页：把题目分配到多个页面 ======
+interface PaperPage {
+  items: ComposerItem[];
+  startNum: number;
+  pageNumber: number;
+}
+
+function paginateQuestions(
+  basketList: ComposerItem[],
+  pageHeight: number = 900,
+): PaperPage[] {
+  if (basketList.length === 0) return [];
+
+  const pages: PaperPage[] = [];
+  let currentItems: ComposerItem[] = [];
+  let currentHeight = 60; // 页眉高度
+  let globalNum = 1;
+
+  for (const item of basketList) {
+    const eh = estimateQuestionHeight(item);
+
+    // 如果当前页已经比较满，且不是第一题，开始新页
+    if (currentHeight + eh > pageHeight && currentItems.length > 0) {
+      pages.push({
+        items: currentItems,
+        startNum: globalNum - currentItems.length,
+        pageNumber: pages.length + 1,
+      });
+      currentItems = [];
+      currentHeight = 60;
+    }
+
+    // 题前分页强制新页
+    if (item.style.pageBreak && currentItems.length > 0) {
+      pages.push({
+        items: currentItems,
+        startNum: globalNum - currentItems.length,
+        pageNumber: pages.length + 1,
+      });
+      currentItems = [];
+      currentHeight = 60;
+    }
+
+    currentItems.push(item);
+    currentHeight += eh;
+    globalNum++;
+  }
+
+  if (currentItems.length > 0) {
+    pages.push({
+      items: currentItems,
+      startNum: globalNum - currentItems.length,
+      pageNumber: pages.length + 1,
+    });
+  }
+
+  return pages;
+}
+
+// ====== 父组件 ======
+export default function ExamComposer({ questions, basketIds, onBasketChange, onClearBasket, apiBase }: Props) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [styles, setStyles] = useState<Record<string, QuestionStyle>>({});
+  const [paperSettings, setPaperSettings] = useState<PaperSettings>(DEFAULT_PAPER);
+  const [viewMode, setViewMode] = useState<'single' | 'multi'>('single');
+  const [editingPaper, setEditingPaper] = useState(false);
+
+  // 按 basketIds 顺序构建列表
+  const basketList: ComposerItem[] = useMemo(() => {
+    return basketIds
+      .map((id, i) => {
+        const q = questions.find(q => q.id === id);
+        if (!q) return null;
+        return {
+          questionId: q.id,
+          order: i,
+          style: styles[q.id] || DEFAULT_STYLE,
+          rawQuestion: q,
+        };
+      })
+      .filter(Boolean) as ComposerItem[];
+  }, [basketIds, questions, styles]);
+
+  const getStyle = useCallback((id: string): QuestionStyle => {
+    return styles[id] || DEFAULT_STYLE;
+  }, [styles]);
+
+  const updateStyle = useCallback((id: string, patch: Partial<QuestionStyle>) => {
+    setStyles(prev => ({
+      ...prev,
+      [id]: { ...getStyle(id), ...patch },
+    }));
+  }, [getStyle]);
+
+  // ====== 题型内排序（跳过不同类型题目） ======
+  const handleReorder = useCallback((fromIdx: number, direction: 'up' | 'down') => {
+    const item = basketList[fromIdx];
+    if (!item) return;
+    const currentType = item.rawQuestion.type;
+
+    const newIds = [...basketIds];
+
+    if (direction === 'up') {
+      // 往前找同类型的题目
+      let targetIdx = -1;
+      for (let i = fromIdx - 1; i >= 0; i--) {
+        if (basketList[i].rawQuestion.type === currentType) {
+          targetIdx = i;
+          break;
+        }
+      }
+      if (targetIdx === -1) return; // 前面没有同类型题目
+      [newIds[targetIdx], newIds[fromIdx]] = [newIds[fromIdx], newIds[targetIdx]];
+    } else {
+      // 往后找同类型的题目
+      let targetIdx = -1;
+      for (let i = fromIdx + 1; i < basketList.length; i++) {
+        if (basketList[i].rawQuestion.type === currentType) {
+          targetIdx = i;
+          break;
+        }
+      }
+      if (targetIdx === -1) return; // 后面没有同类型题目
+      [newIds[fromIdx], newIds[targetIdx]] = [newIds[targetIdx], newIds[fromIdx]];
+    }
+
+    onBasketChange(newIds);
+  }, [basketIds, basketList, onBasketChange]);
+
+  const handleRemove = useCallback((id: string) => {
+    onBasketChange(basketIds.filter(bid => bid !== id));
+    if (selectedId === id) setSelectedId(null);
+  }, [basketIds, onBasketChange, selectedId]);
+
+  const selectedQuestion = selectedId
+    ? basketList.find(i => i.questionId === selectedId) : null;
+  const selectedStyle = selectedId ? getStyle(selectedId) : DEFAULT_STYLE;
+
+  // 多页分页数据
+  const paperPages = useMemo(() => {
+    if (viewMode !== 'multi') return [];
+    return paginateQuestions(basketList);
+  }, [basketList, viewMode]);
+
+  const totalPages = paperPages.length || 1;
+
+  // ====== 渲染单页内容（题目列表） ======
+  const renderQuestionList = (items: ComposerItem[], startNum: number) => {
+    let qNum = startNum;
+    return items.map(item => {
+      const html = buildQuestionHTML(item, qNum++, apiBase, paperSettings);
+      const isSelected = item.questionId === selectedId;
+      return (
+        <MathJaxBlock
+          key={item.questionId}
+          key_={item.questionId}
+          html={html}
+          style={item.style}
+          isSelected={isSelected}
+          onClick={() => setSelectedId(item.questionId)}
+        />
+      );
+    });
+  };
+
+  // ====== 渲染答案末尾区 ======
+  const renderAnswerSection = () => {
+    if (paperSettings.answerMode !== 'atEnd') return null;
+    let aNum = 1;
+    return (
+      <div key="answer-section" className="answer-section-end">
+        <div className="paper-section-title">参考答案</div>
+        {basketList.map(item => {
+          const q = item.rawQuestion;
+          const answer = q.answer || q.answerContent || '';
+          let analysis = preprocessLatex(q.analysis || '', q.type);
+          analysis = ensureMathDelimiters(analysis);
+          const ahtml = `<p><strong>${aNum++}.</strong> ${answer}</p>` +
+            (analysis ? `<p style="padding-left:24px;">${analysis}</p>` : '');
+          return <MathJaxBlock key={`a-${item.questionId}`} key_={`a-${item.questionId}`}
+            html={ahtml} style={DEFAULT_STYLE} isSelected={false} />;
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div className="composer-wrapper">
+      {/* ========== 左侧栏：选题篮 ========== */}
+      <div className="composer-left">
+        <div className="composer-left-header">
+          选题篮 ({basketList.length})
+          {basketList.length > 0 && (
+            <button
+              onClick={onClearBasket}
+              style={{
+                background: 'none', border: 'none', color: '#c33',
+                cursor: 'pointer', fontSize: 12,
+              }}
+            >清空</button>
+          )}
+        </div>
+        <div className="composer-left-list">
+          <BasketPanel
+            items={basketList}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onReorder={handleReorder}
+            onRemove={handleRemove}
+          />
+        </div>
+      </div>
+
+      {/* ========== 中间栏：WYSIWYG 试卷预览 ========== */}
+      <div className="composer-center">
+        <div className="composer-center-toolbar">
+          <span style={{ fontSize: 14, fontWeight: 600 }}>试卷预览</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* 单页/多页切换 */}
+            <button
+              onClick={() => setViewMode(viewMode === 'single' ? 'multi' : 'single')}
+              style={{
+                padding: '4px 12px', borderRadius: 4, border: '0.5px solid #ddd',
+                background: viewMode === 'multi' ? '#534AB7' : '#fff',
+                color: viewMode === 'multi' ? '#fff' : '#666',
+                cursor: 'pointer', fontSize: 12, fontWeight: 500,
+              }}
+            >{viewMode === 'multi' ? `≡ 多页 (${totalPages})` : '▯ 单页'}</button>
+            <span style={{ fontSize: 12, color: '#999' }}>
+              {basketList.length} 题
+            </span>
+          </div>
+        </div>
+        <div className="composer-center-preview">
+          {basketList.length === 0 ? (
+            <div className="paper-sheet" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <p style={{ color: '#999', textAlign: 'center' }}>
+                从试题库添加题目到此预览
+              </p>
+            </div>
+          ) : viewMode === 'single' ? (
+            // ===== 单页模式：连续滚动 =====
+            <div className="paper-sheet">
+              {/* 页眉 */}
+              <div className="paper-header">
+                <div className="header-row">
+                  <span>{paperSettings.headerLeft}</span>
+                  <span>{paperSettings.headerRight}</span>
+                </div>
+                <div className="paper-title">{paperSettings.title}</div>
+                {paperSettings.subtitle && (
+                  <div className="paper-subtitle">{paperSettings.subtitle}</div>
+                )}
+              </div>
+
+              {renderQuestionList(basketList, 1)}
+              {renderAnswerSection()}
+
+              <div className="paper-footer">— {paperSettings.title} —</div>
+            </div>
+          ) : (
+            // ===== 多页模式：分页显示 =====
+            <div className="paper-multi-container">
+              {paperPages.map(page => (
+                <div key={`page-${page.pageNumber}`} className="paper-page">
+                  {/* 页眉 */}
+                  <div className="paper-header">
+                    <div className="header-row">
+                      <span>{paperSettings.headerLeft}</span>
+                      <span>{paperSettings.headerRight}</span>
+                    </div>
+                    <div className="paper-title">{paperSettings.title}</div>
+                    {paperSettings.subtitle && (
+                      <div className="paper-subtitle">{paperSettings.subtitle}</div>
+                    )}
+                  </div>
+
+                  {renderQuestionList(page.items, page.startNum)}
+
+                  {/* 最后一页显示答案 */}
+                  {page.pageNumber === totalPages && renderAnswerSection()}
+
+                  <div className="paper-footer">
+                    <span>— {paperSettings.title} —</span>
+                    <span style={{ marginLeft: 16, color: '#999' }}>第 {page.pageNumber} / {totalPages} 页</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ========== 右侧栏：属性配置 ========== */}
+      <div className="composer-right">
+        <div className="composer-right-header">
+          属性配置
+          <button
+            onClick={() => setEditingPaper(!editingPaper)}
+            style={{
+              background: editingPaper ? '#f0eeff' : '#f5f5f5',
+              border: '0.5px solid #ddd', borderRadius: 4,
+              padding: '3px 10px', fontSize: 12, cursor: 'pointer',
+              color: editingPaper ? '#534AB7' : '#666',
+            }}
+          >试卷设置</button>
+        </div>
+        <div className="composer-right-body">
+
+          {/* ===== 试卷设置面板 ===== */}
+          {editingPaper && (
+            <div style={{ marginBottom: 20 }}>
+              <div className="property-group">
+                <div className="property-group-title">试卷设置</div>
+                <div className="property-row">
+                  <label>标题</label>
+                  <input type="text" value={paperSettings.title}
+                    onChange={e => setPaperSettings(prev => ({ ...prev, title: e.target.value }))}
+                    style={{ width: '100%', padding: '4px 8px', border: '0.5px solid #ddd', borderRadius: 4, fontSize: 13 }} />
+                </div>
+                <div className="property-row">
+                  <label>副标题</label>
+                  <input type="text" value={paperSettings.subtitle}
+                    onChange={e => setPaperSettings(prev => ({ ...prev, subtitle: e.target.value }))}
+                    style={{ width: '100%', padding: '4px 8px', border: '0.5px solid #ddd', borderRadius: 4, fontSize: 13 }} />
+                </div>
+                <div className="property-row">
+                  <label>页眉左</label>
+                  <input type="text" value={paperSettings.headerLeft}
+                    onChange={e => setPaperSettings(prev => ({ ...prev, headerLeft: e.target.value }))}
+                    style={{ width: '100%', padding: '4px 8px', border: '0.5px solid #ddd', borderRadius: 4, fontSize: 13 }} />
+                </div>
+                <div className="property-row">
+                  <label>页眉右</label>
+                  <input type="text" value={paperSettings.headerRight}
+                    onChange={e => setPaperSettings(prev => ({ ...prev, headerRight: e.target.value }))}
+                    style={{ width: '100%', padding: '4px 8px', border: '0.5px solid #ddd', borderRadius: 4, fontSize: 13 }} />
+                </div>
+              </div>
+
+              <div className="property-group">
+                <div className="property-group-title">答案显示</div>
+                <div className="property-row">
+                  <select value={paperSettings.answerMode}
+                    onChange={e => setPaperSettings(prev => ({ ...prev, answerMode: e.target.value as PaperSettings['answerMode'] }))}
+                    style={{ width: '100%' }}>
+                    <option value="none">不显示答案</option>
+                    <option value="afterEach">每题后面显示</option>
+                    <option value="atEnd">试卷末尾显示</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== 题目属性面板 ===== */}
+          {!editingPaper && selectedQuestion ? (
+            <div>
+              <p style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
+                {selectedQuestion.rawQuestion.title?.slice(0, 40) || '(无标题)'}
+              </p>
+              <p style={{ color: '#999', fontSize: 12, marginBottom: 16 }}>
+                {selectedQuestion.rawQuestion.type || '选择题'} · 难度{selectedQuestion.rawQuestion.difficulty || '未知'}
+              </p>
+
+              {/* 字体设置 */}
+              <div className="property-group">
+                <div className="property-group-title">字体设置</div>
+                <div className="property-row">
+                  <label>字号</label>
+                  <input type="number" value={selectedStyle.fontSize} min={10} max={24}
+                    onChange={e => updateStyle(selectedId!, { fontSize: Number(e.target.value) })} />
+                </div>
+                <div className="property-row">
+                  <label>字体颜色</label>
+                  <input type="color" value={selectedStyle.fontColor}
+                    onChange={e => updateStyle(selectedId!, { fontColor: e.target.value })} />
+                </div>
+                <div className="property-row">
+                  <label>加粗</label>
+                  <button className={`toggle ${selectedStyle.bold ? 'on' : 'off'}`}
+                    onClick={() => updateStyle(selectedId!, { bold: !selectedStyle.bold })} />
+                </div>
+              </div>
+
+              {/* 框线设置 */}
+              <div className="property-group">
+                <div className="property-group-title">框线设置</div>
+                <div className="property-row">
+                  <label>边框</label>
+                  <button className={`toggle ${selectedStyle.hasBorder ? 'on' : 'off'}`}
+                    onClick={() => updateStyle(selectedId!, { hasBorder: !selectedStyle.hasBorder })} />
+                </div>
+                {selectedStyle.hasBorder && (
+                  <div className="property-row">
+                    <label>边框颜色</label>
+                    <input type="color" value={selectedStyle.borderColor}
+                      onChange={e => updateStyle(selectedId!, { borderColor: e.target.value })} />
+                  </div>
+                )}
+              </div>
+
+              {/* 选项排列（仅选择题） */}
+              {(selectedQuestion.rawQuestion.type === '单选' || selectedQuestion.rawQuestion.type === '多选') && (
+                <div className="property-group">
+                  <div className="property-group-title">选项排列</div>
+                  <div className="property-row">
+                    <select value={selectedStyle.optionLayout}
+                      onChange={e => updateStyle(selectedId!, {
+                        optionLayout: e.target.value as 'horizontal-4' | 'horizontal-2' | 'vertical'
+                      })}
+                      style={{ width: '100%' }}>
+                      <option value="horizontal-4">一行4个（A B C D）</option>
+                      <option value="horizontal-2">一行2个（A B / C D）</option>
+                      <option value="vertical">竖排（每行一个）</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* 题目间距 */}
+              <div className="property-group">
+                <div className="property-group-title">题目间距</div>
+                <div className="property-row">
+                  <label>空白行数</label>
+                  <input type="number" value={selectedStyle.blankLines} min={0} max={20}
+                    onChange={e => updateStyle(selectedId!, { blankLines: Number(e.target.value) })} />
+                </div>
+                <div className="property-row">
+                  <label>题前分页</label>
+                  <button className={`toggle ${selectedStyle.pageBreak ? 'on' : 'off'}`}
+                    onClick={() => updateStyle(selectedId!, { pageBreak: !selectedStyle.pageBreak })} />
+                </div>
+              </div>
+
+              {/* 图片设置 */}
+              {selectedQuestion.rawQuestion.images && Object.keys(selectedQuestion.rawQuestion.images).length > 0 && (
+                <div className="property-group">
+                  <div className="property-group-title">图片设置</div>
+                  <div className="property-row">
+                    <label>图片宽度</label>
+                    <select value={selectedStyle.imageWidth}
+                      onChange={e => updateStyle(selectedId!, { imageWidth: e.target.value })}
+                      style={{ width: '100%' }}>
+                      <option value="25%">25%</option>
+                      <option value="35%">35%</option>
+                      <option value="50%">50%（默认）</option>
+                      <option value="75%">75%</option>
+                      <option value="100%">100%</option>
+                    </select>
+                  </div>
+                  <div className="property-row">
+                    <label>对齐方式</label>
+                    <select value={selectedStyle.imageAlign}
+                      onChange={e => updateStyle(selectedId!, { imageAlign: e.target.value as 'left' | 'center' | 'right' })}
+                      style={{ width: '100%' }}>
+                      <option value="left">左对齐</option>
+                      <option value="center">居中</option>
+                      <option value="right">右对齐</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : !editingPaper ? (
+            <div className="property-empty">
+              <p>请先在左侧或中间</p>
+              <p>选中一道题目</p>
+              <p style={{ fontSize: 12, color: '#aaa', marginTop: 8 }}>
+                或点"试卷设置"编辑全局参数
+              </p>
+            </div>
+          ) : null}
+        </div>
+
+        {/* 导出按钮 */}
+        <div className="composer-right-footer">
+          <button className="btn-export btn-export-primary">
+            导出 PDF
+          </button>
+          <button className="btn-export btn-export-secondary">
+            导出 LaTeX
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
