@@ -10,12 +10,21 @@ export default function Login() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    console.log('Login submit triggered')
     setError('')
     setLoading(true)
 
-    const { error: signInError } = await signIn(email, password)
-    if (signInError) {
-      setError(signInError.message === 'Invalid login credentials' ? '邮箱或密码错误' : signInError.message)
+    try {
+      const { error: signInError } = await signIn(email, password)
+      if (signInError) {
+        console.log('Login error:', signInError)
+        setError(signInError.message === 'Invalid login credentials' ? '邮箱或密码错误' : signInError.message)
+      } else {
+        console.log('Login success')
+      }
+    } catch (err: any) {
+      console.log('Login exception:', err)
+      setError('登录异常: ' + (err.message || '未知错误'))
     }
     setLoading(false)
   }
