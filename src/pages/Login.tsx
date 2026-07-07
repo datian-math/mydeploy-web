@@ -110,7 +110,15 @@ export default function Login() {
         </form>
 
         <p style={{ textAlign: 'center', fontSize: 12, color: '#bbb', marginTop: 24 }}>
-          需要管理员添加账号后才能登录
+          没有账号？{' '}
+          <a
+            href="https://classmate-map.vercel.app"
+            target="_blank"
+            title="先去蹭饭图网页注册，注册好了从那里点链接过来"
+            style={{ color: '#534AB7', textDecoration: 'underline', cursor: 'pointer' }}
+          >
+            注册
+          </a>
         </p>
       </div>
     </div>
