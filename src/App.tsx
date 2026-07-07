@@ -3,6 +3,7 @@ import './App.css'
 import DownloadedPapers from './DownloadedPapers'
 import PdfBatchEntry from './PdfBatchEntry'
 import { useAuth } from './lib/auth'
+import { supabase } from './lib/supabase'
 import { fetchBasket as supabaseFetchBasket, addToBasket as supabaseAddToBasket, removeFromBasket as supabaseRemoveFromBasket, clearBasket as supabaseClearBasket } from './lib/db'
 const ExamComposer = React.lazy(() => import('./composer/ExamComposer'))
 
@@ -1272,6 +1273,23 @@ export default function App() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 20, color: '#534AB7', fontWeight: 600 }}>∑</span>
             <span style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>数学试题库</span>
+            {user && (
+              <button
+                onClick={async () => {
+                  const { data: { session } } = await supabase.auth.getSession()
+                  const base = 'https://classmate-map.vercel.app'
+                  const hash = session
+                    ? `access_token=${session.access_token}&refresh_token=${session.refresh_token || ''}`
+                    : ''
+                  window.open(`${base}#${hash}`, '_blank')
+                }}
+                style={{
+                  marginLeft: 8, padding: '3px 10px', borderRadius: 6,
+                  border: '0.5px solid #fdba74', background: '#fff7ed',
+                  color: '#f97316', fontSize: 12, cursor: 'pointer',
+                }}
+              >蹭饭图</button>
+            )}
             {user && (
               <button
                 onClick={signOut}
