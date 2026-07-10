@@ -8,7 +8,7 @@ import { fetchBasket as supabaseFetchBasket, addToBasket as supabaseAddToBasket,
 const ExamComposer = React.lazy(() => import('./composer/ExamComposer'))
 
 const API = 'http://localhost:3001'
-const USE_SUPABASE_BASKET = true  // Use Supabase for basket (user-isolated)
+const USE_SUPABASE_BASKET = true
 
 // MathJax 全局类型声明
 declare global {
@@ -73,6 +73,25 @@ function preprocessLatex(latex: string, questionType?: string): string {
     .replace(/\\end\{solution\}/g, '')
     .replace(/\\begin\{answer\}/g, '')
     .replace(/\\end\{answer\}/g, '')
+    // 移除/替换 MathJax 不识别的图形/容器环境（保险：万一导入时漏掉）
+    // tikzpicture：整块替换为占位符（正常情况已被编译为SVG图片，不会走到这里）
+    // 注意：\s* 容忍 \begin {tikzpicture} 这种带空格的写法
+    .replace(/\\begin\s*\{tikzpicture\}[\s\S]*?\\end\s*\{tikzpicture\}/g, '〔图示〕')
+    .replace(/\\begin\s*\{tikzpicture\}[\s\S]*$/g, '〔图示〕') // 未闭合的
+    // 清理残留的 TikZ 命令（\begin{tikzpicture} 被 minipage 清理误删的情况）
+    .replace(/\\(draw|node|path|fill|coordinate|pgftransform\w*|pgfmathsetmacro|usetikzlibrary)\b[^\n]*\n?/g, '')
+    .replace(/\\end\s*\{tikzpicture\}/g, '〔图示〕')
+    .replace(/\\begin\s*\{tikzpicture\}(\[[^\]]*\])?/g, '')
+    .replace(/\\begin\{picture\}[\s\S]*?\\end\{picture\}/g, '〔图示〕')
+    .replace(/\\begin\{pspicture\}[\s\S]*?\\end\{pspicture\}/g, '〔图示〕')
+    .replace(/\\begin\{figure\}[\s\S]*?\\end\{figure\}/g, '〔图〕')
+    // minipage: 提取内部，丢弃容器（含 [pos]{width} 参数）
+    .replace(/\\begin\{minipage\}(\[[^\]]*\])?\{[^}]*\}/g, '').replace(/\\end\{minipage\}/g, '')
+    .replace(/\\begin\{center\}[\s\S]*?\\end\{center\}/g, (m) => m.replace(/\\begin\{center\}/g, '').replace(/\\end\{center\}/g, ''))
+    .replace(/\\begin\{tabular\}[\s\S]*?\\end\{tabular\}/g, (m) => m.replace(/\\begin\{tabular\}(\[[^\]]*\])?\{[^}]*\}/g, '').replace(/\\end\{tabular\}/g, '').replace(/\\hline/g, '').replace(/\\\\/g, ' | ').replace(/&/g, ' | '))
+    .replace(/\\begin\{enumerate\}[\s\S]*?\\end\{enumerate\}/g, (m) => m.replace(/\\begin\{enumerate\}(\[[^\]]*\])?/g, '').replace(/\\end\{enumerate\}/g, '').replace(/\\item\s*/g, '\n• '))
+    .replace(/\\begin\{itemize\}[\s\S]*?\\end\{itemize\}/g, (m) => m.replace(/\\begin\{itemize\}(\[[^\]]*\])?/g, '').replace(/\\end\{itemize\}/g, '').replace(/\\item\s*/g, '\n• '))
+    .replace(/\\begin\{tasks\}\(\d+\)[\s\S]*?\\end\{tasks\}/g, (m) => m.replace(/\\begin\{tasks\}\(\d+\)/g, '').replace(/\\end\{tasks\}/g, '').replace(/\\task(?:\[[^\]]*\])?\s*/g, '\n① '))
     // 处理 \item 命令，根据题型转换
     .replace(/\\item\s*/g, itemReplacer)
     // 将 \includegraphics 转换为 \img{path}，让预览能显示占位符或实际图片
@@ -142,6 +161,22 @@ function extractAbcdOptions(content: string): { cleanedContent: string; abcdOpti
     cleanedContent: cleanedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim(),
     abcdOptions: validOptions
   }
+}
+
+/**
+ * 清理 HTML <img> 标签周围的多余空白。
+ * 把 <img> 前后的连续换行/空格/制表符折叠为单个 \n，
+ * 避免题目内容和图片之间出现大段空白行。
+ */
+function compactImageWhitespace(text: string): string {
+  if (!text) return text
+  // 把 <img 之前的连续空白（\n、空格、\t）折叠为单个 \n
+  text = text.replace(/[\s\n]*(<img\b[^>]*>)/g, '\n$1')
+  // 把 <img> 之后的连续空白折叠为单个 \n
+  text = text.replace(/(<img\b[^>]*>)[\s\n]*/g, '$1\n')
+  // 把整段里 3 个及以上连续换行折叠为 2 个
+  text = text.replace(/\n{3,}/g, '\n\n')
+  return text.trim()
 }
 
 // 将 LaTeX 表格语法转换为 HTML 表格（MathJax 不支持 tabular 环境）
@@ -371,6 +406,42 @@ function MathJaxPreview({ latex, imageUrls, questionType, style }: {
     // 写入 DOM
     containerRef.current.innerHTML = processed
 
+    // 清理 <img> 标签周围的多余空白（题干末尾的 \n 在预处理时被转成 <br/>，
+    // 多个连续 <br/> 会堆出巨大空白行；折叠为单个或去掉）
+    try {
+      const root = containerRef.current
+      // 找所有 img/img 容器
+      const imgs = root.querySelectorAll('img')
+      imgs.forEach((img) => {
+        // 找 img 的前一个非空节点
+        let prev = img.previousSibling
+        while (prev && prev.nodeType === 3 && !prev.nodeValue) prev = prev.previousSibling
+        // 折叠 img 之前的连续 <br/> 为一个
+        let brCount = 0
+        let p = prev
+        while (p && p.nodeType === 1 && p.nodeName === 'BR') {
+          brCount++
+          const prevP = p.previousSibling
+          if (brCount > 1) p.remove()
+          p = prevP
+        }
+        // 折叠 img 之后的连续 <br/> 为一个
+        let next = img.nextSibling
+        brCount = 0
+        while (next && next.nodeType === 1 && next.nodeName === 'BR') {
+          brCount++
+          const nextN = next.nextSibling
+          if (brCount > 1) next.remove()
+          next = nextN
+        }
+      })
+      // 清理纯空白段落（只包含 <br/> 或空白文本的 <p>）
+      root.querySelectorAll('p').forEach((p) => {
+        const text = p.textContent || ''
+        if (!text.trim() && !p.querySelector('img')) p.remove()
+      })
+    } catch {}
+
     // 调用 MathJax 渲染数学公式
     window.MathJax.typesetPromise([containerRef.current]).catch((err: any) => {
       console.error('MathJax typeset error:', err)
@@ -454,12 +525,16 @@ interface Question {
 }
 
 export default function App() {
-  // Auth
   const { user, signOut } = useAuth()
 
   // 页面状态
-  const [activeTab, setActiveTab] = useState<'bank' | 'editor' | 'basket' | 'composer' | 'import' | 'papers' | 'about' | 'pdf-batch'>('bank')
-
+  const [activeTab, setActiveTab] = useState<'bank' | 'editor' | 'basket' | 'composer' | 'import' | 'papers' | 'about' | 'pdf-batch' | 'exam-papers' | 'resources'>('bank')
+  
+  // 板块模式：normal=普通题库  gaokao=历届高考真题
+  const [bankMode, setBankMode] = useState<'normal' | 'gaokao'>('normal')
+  const apiBase = bankMode === 'gaokao' ? '/api/exam' : '/api'
+  const isGaokao = bankMode === 'gaokao'
+  
   // 数据状态
   const [categories, setCategories] = useState<Category[]>([])
   const [questions, setQuestions] = useState<Question[]>([])
@@ -529,18 +604,41 @@ export default function App() {
   const [expandedBatchQId, setExpandedBatchQId] = useState<string | null>(null)
   const [editedBatchContents, setEditedBatchContents] = useState<Record<string, string>>({})
 
-  // 加载数据
+  // 真题PDF套卷状态
+  const [examPdfList, setExamPdfList] = useState<any[]>([])
+  const [examPdfTitle, setExamPdfTitle] = useState('')
+  const [examPdfFile, setExamPdfFile] = useState<File | null>(null)
+  const [examPdfUploading, setExamPdfUploading] = useState(false)
+  const [viewingPdf, setViewingPdf] = useState<any | null>(null)
+
+  // 加载数据（bankMode 切换时也重新加载）
   useEffect(() => {
+    setSelectedCategory('')
+    setSelectedGrade('all')
+    setCurrentPage(1)
+    // 切换题库时立即清空旧 basket，避免显示另一个题库的题目
+    setBasket([])
+    setQuestions([])
     fetchCategories()
     fetchQuestions()
     fetchBasket()
-  }, [])
+  }, [bankMode])
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch(`${API}/api/categories`)
+      const res = await fetch(`${API}${apiBase}/categories`)
       const data = await res.json()
-      setCategories(data)
+      // 如果数据有parentId字段（高考真题模式），转换为树形结构
+      if (data.length > 0 && data[0].parentId !== undefined) {
+        const parents = data.filter((c: any) => !c.parentId)
+        const tree = parents.map((p: any) => ({
+          ...p,
+          children: data.filter((c: any) => c.parentId === p.id)
+        }))
+        setCategories(tree)
+      } else {
+        setCategories(data)
+      }
     } catch (err) {
       console.error('加载分类失败:', err)
     }
@@ -566,7 +664,7 @@ export default function App() {
       if (selectedGrade !== 'all') params.append('grade', selectedGrade)
       if (searchKeyword) params.append('keyword', searchKeyword)
       
-      const res = await fetch(`${API}/api/questions?${params}`)
+      const res = await fetch(`${API}${apiBase}/questions?${params}`)
       const data = await res.json()
       setQuestions(Array.isArray(data) ? data.map(normalizeQuestion) : [])
     } catch (err) {
@@ -581,13 +679,69 @@ export default function App() {
       return
     }
     try {
-      const res = await fetch(`${API}/api/basket`)
+      const res = await fetch(`${API}${apiBase}/basket`)
       const data = await res.json()
       setBasket(data.map((item: any) => item.questionId))
     } catch (err) {
       console.error('加载试卷篮失败:', err)
     }
   }
+
+  // 加载真题PDF套卷列表
+  const fetchExamPdfList = async () => {
+    try {
+      const res = await fetch(`${API}/api/exam/pdf-papers`)
+      const data = await res.json()
+      setExamPdfList(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error('加载PDF套卷列表失败:', err)
+    }
+  }
+
+  // 上传真题PDF套卷
+  const handleUploadExamPdf = async () => {
+    if (!examPdfFile) { alert('请选择PDF文件'); return }
+    if (!examPdfTitle.trim()) { alert('请填写标题'); return }
+    setExamPdfUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('pdf', examPdfFile)
+      formData.append('title', examPdfTitle.trim())
+      const res = await fetch(`${API}/api/exam/pdf-papers/upload`, {
+        method: 'POST',
+        body: formData
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || '上传失败')
+      }
+      setExamPdfTitle('')
+      setExamPdfFile(null)
+      await fetchExamPdfList()
+      alert('上传成功！')
+    } catch (err: any) {
+      alert('上传失败：' + (err.message || '未知错误'))
+    } finally {
+      setExamPdfUploading(false)
+    }
+  }
+
+  // 删除真题PDF套卷
+  const handleDeleteExamPdf = async (id: string, title: string) => {
+    if (!confirm(`确定删除「${title}」吗？`)) return
+    try {
+      await fetch(`${API}/api/exam/pdf-papers/${id}`, { method: 'DELETE' })
+      await fetchExamPdfList()
+      if (viewingPdf?.id === id) setViewingPdf(null)
+    } catch (err) {
+      alert('删除失败')
+    }
+  }
+
+  // 切换到PDF套卷标签时加载数据
+  useEffect(() => {
+    if (activeTab === 'exam-papers') fetchExamPdfList()
+  }, [activeTab])
 
   // 筛选变化时重新加载并回到第一页
   useEffect(() => {
@@ -658,7 +812,7 @@ export default function App() {
       if (!q) return
       const body: any = { analysis: aiPreviewContent }
       // 只更新 analysis，不影响其他字段
-      await fetch(`${API}/api/questions/${qid}`, {
+      await fetch(`${API}${apiBase}/questions/${qid}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -816,13 +970,8 @@ export default function App() {
 
   // 添加到试卷篮
   const addToBasket = async (questionId: string) => {
-    if (USE_SUPABASE_BASKET) {
-      await supabaseAddToBasket(questionId)
-      setBasket(prev => [...prev, questionId])
-      return
-    }
     try {
-      await fetch(`${API}/api/basket`, {
+      await fetch(`${API}${apiBase}/basket`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ questionId })
@@ -835,13 +984,8 @@ export default function App() {
 
   // 从试卷篮移除
   const removeFromBasket = async (questionId: string) => {
-    if (USE_SUPABASE_BASKET) {
-      await supabaseRemoveFromBasket(questionId)
-      setBasket(prev => prev.filter(id => id !== questionId))
-      return
-    }
     try {
-      await fetch(`${API}/api/basket/${questionId}`, { method: 'DELETE' })
+      await fetch(`${API}${apiBase}/basket/${questionId}`, { method: 'DELETE' })
       setBasket(prev => prev.filter(id => id !== questionId))
     } catch (err) {
       alert('移除失败')
@@ -871,9 +1015,15 @@ export default function App() {
 
   // 保存试题
   const handleSaveQuestion = async () => {
-    if (!editTitle.trim()) return alert('请填寫题目标题')
     if (!editContent.trim()) return alert('请填写题目内容')
-    if (!editCategory) return alert('请选择知识点分类')
+    if (!editCategory) return alert(isGaokao ? '请选择年份' : '请选择知识点分类')
+
+    // 标题可选：若为空，自动取题目内容前20字作为标题
+    let finalTitle = editTitle.trim()
+    if (!finalTitle) {
+      finalTitle = editContent.trim().replace(/<[^>]+>/g, '').replace(/\\[\(\[]|\\[\)\]]|\s+/g, '').slice(0, 20)
+      if (!finalTitle) finalTitle = '未命名题目'
+    }
 
     // 选择题/多选题：选项来源优先级：content 末尾的 \item > editOptions
     // content 是用户直接编辑的主要界面，优先信任
@@ -944,8 +1094,11 @@ export default function App() {
       }
     }
 
+    // 清理内容中 <img> 周围的多余空白，避免题目与图片之间大段空行
+    finalContent = compactImageWhitespace(finalContent)
+
     const questionData = {
-      title: editTitle,
+      title: finalTitle,
       content: finalContent,
       answerContent: '',  // 答案已合并到解析，不再单独存储
       analysis: editAnalysis,
@@ -953,7 +1106,7 @@ export default function App() {
       answer: editAnswer,
       difficulty: editDifficulty,
       type: editType,
-      grade: editGrade,
+      grade: isGaokao ? '' : editGrade,
       categoryId: editCategory,
       categoryName: categories.flatMap(c => [c, ...(c.children || [])]).find(c => c.id === editCategory)?.name || '',
       tags: editTags.split(/[,，]/).map(t => t.trim().replace(/[\n\r]+/g, '')).filter(t => t.length > 0),
@@ -962,18 +1115,17 @@ export default function App() {
     }
 
     try {
-      if (editingQuestion) {
-        await fetch(`${API}/api/questions/${editingQuestion.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(questionData)
-        })
-      } else {
-        await fetch(`${API}/api/questions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(questionData)
-        })
+      const url = editingQuestion
+        ? `${API}${apiBase}/questions/${editingQuestion.id}`
+        : `${API}${apiBase}/questions`
+      const res = await fetch(url, {
+        method: editingQuestion ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(questionData)
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(`HTTP ${res.status}: ${text}`)
       }
       
       // 重置表单
@@ -1006,7 +1158,7 @@ export default function App() {
     setEditTitle(q.title)
     // 选择题/多选题：把选项追加到题目内容末尾（\item 格式），方便在编辑器中看到
     // ⚠️ 先清理 content 中可能残留的旧选项和 LaTeX 环境碎片，再加新选项
-    let cleanContent = q.content
+    let cleanContent = compactImageWhitespace(q.content)
     const isChoice = q.type === '单选' || q.type === '多选'
     let rawOpts: string[] = q.options || []
 
@@ -1072,7 +1224,7 @@ export default function App() {
   const handleDelete = async (id: string) => {
     if (!confirm('确定要删除这道题吗？')) return
     try {
-      await fetch(`${API}/api/questions/${id}`, { method: 'DELETE' })
+      await fetch(`${API}${apiBase}/questions/${id}`, { method: 'DELETE' })
       fetchQuestions()
       setBasket(prev => prev.filter(bid => bid !== id))
     } catch (err) {
@@ -1163,13 +1315,8 @@ export default function App() {
   // 清空试卷篮
   const handleClearBasket = async () => {
     if (!confirm('确定要清空旧版组卷吗？')) return
-    if (USE_SUPABASE_BASKET) {
-      await supabaseClearBasket()
-      setBasket([])
-      return
-    }
     try {
-      await fetch(`${API}/api/basket`, { method: 'DELETE' })
+      await fetch(`${API}${apiBase}/basket`, { method: 'DELETE' })
       setBasket([])
     } catch (err) {
       alert('清空失败')
@@ -1262,51 +1409,43 @@ export default function App() {
     }
   }
 
-  // 获取试卷篮中的题目
+  // 获取试卷篮中的题目（只取当前题库的题，避免显示别题库残留ID）
   const basketQuestions = questions.filter(q => basket.includes(q.id))
+  // 总篮数（含跨题库ID），用于导航栏显示
+  const basketTotal = basket.length
 
   return (
     <div style={{ minHeight: '100vh', background: '#f5f5f0', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       {/* 顶部导航 */}
       <header style={{ background: '#fff', borderBottom: '0.5px solid #e8e8e4', padding: '0 24px', position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ maxWidth: 1400, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 56 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontSize: 20, color: '#534AB7', fontWeight: 600 }}>∑</span>
-            <span style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>数学试题库</span>
+            <span style={{ fontSize: 16, fontWeight: 600, color: '#333' }}>{isGaokao ? '历届高考真题' : '数学试题库'}</span>
+            <div style={{ display: 'flex', gap: 2, marginLeft: 8, background: '#f0f0ec', borderRadius: 8, padding: 2 }}>
+              <button onClick={() => setBankMode('normal')} style={{ padding: '5px 14px', borderRadius: 6, border: 'none', background: bankMode === 'normal' ? '#534AB7' : 'transparent', color: bankMode === 'normal' ? '#fff' : '#666', cursor: 'pointer', fontSize: 13, fontWeight: 500, transition: 'all 0.2s' }}>📝 试题库</button>
+              <button onClick={() => setBankMode('gaokao')} style={{ padding: '5px 14px', borderRadius: 6, border: 'none', background: bankMode === 'gaokao' ? '#534AB7' : 'transparent', color: bankMode === 'gaokao' ? '#fff' : '#666', cursor: 'pointer', fontSize: 13, fontWeight: 500, transition: 'all 0.2s' }}>📋 高考真题</button>
+            </div>
             {user && (
-              <button
-                onClick={async () => {
-                  const { data: { session } } = await supabase.auth.getSession()
-                  const base = 'https://classmate-map.vercel.app'
-                  const hash = session
-                    ? `access_token=${session.access_token}&refresh_token=${session.refresh_token || ''}`
-                    : ''
-                  window.open(`${base}#${hash}`, '_blank')
-                }}
-                style={{
-                  marginLeft: 8, padding: '3px 10px', borderRadius: 6,
-                  border: '0.5px solid #fdba74', background: '#fff7ed',
-                  color: '#f97316', fontSize: 12, cursor: 'pointer',
-                }}
-              >蹭饭图</button>
+              <button onClick={async () => {
+                const { data: { session } } = await supabase.auth.getSession()
+                const base = 'https://classmate-map.vercel.app'
+                const hash = session ? `access_token=${session.access_token}&refresh_token=${session.refresh_token || ''}` : ''
+                window.open(`${base}#${hash}`, '_blank')
+              }} style={{ marginLeft: 8, padding: '3px 10px', borderRadius: 6, border: '0.5px solid #fdba74', background: '#fff7ed', color: '#f97316', fontSize: 12, cursor: 'pointer' }}>蹭饭图</button>
             )}
             {user && (
-              <button
-                onClick={signOut}
-                style={{
-                  marginLeft: 12, padding: '4px 12px', borderRadius: 6,
-                  border: '0.5px solid #ddd', background: 'transparent',
-                  color: '#999', fontSize: 12, cursor: 'pointer',
-                }}
-              >退出</button>
+              <button onClick={signOut} style={{ padding: '4px 12px', borderRadius: 6, border: '0.5px solid #ddd', background: 'transparent', color: '#999', fontSize: 12, cursor: 'pointer' }}>退出</button>
             )}
           </div>
           <nav style={{ display: 'flex', gap: 4 }}>
             {[
               { key: 'bank', label: '试题库' },
-              { key: 'composer', label: '✨ 新版组卷' },
+              ...(isGaokao ? [{ key: 'exam-papers', label: '📑 真题PDF套卷' }] : []),
               { key: 'basket', label: `旧版组卷 (${basket.length})` },
-              { key: 'about', label: '关于' }
+              { key: 'composer', label: '✨ 新版组卷' },
+              { key: 'about', label: '关于' },
+              { key: 'resources', label: '资源工具' }
             ].map(tab => (
               <button
                 key={tab.key}
@@ -1335,8 +1474,11 @@ export default function App() {
           <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20 }}>
             {/* 左侧分类树 */}
             <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 16, height: 'fit-content' }}>
-              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12, color: '#333' }}>知识点分类</div>
-              {categories.map(cat => (
+              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12, color: '#333' }}>{isGaokao ? '年份' : '知识点分类'}</div>
+              <div style={{ maxHeight: isGaokao ? 'calc(100vh - 200px)' : 'none', overflowY: isGaokao ? 'auto' : 'visible' }}>
+              {categories.map(cat => {
+                const count = isGaokao ? questions.filter(q => cat.children?.some(c => c.id === q.categoryId) || q.categoryId === cat.id).length : 0
+                return (
                 <div key={cat.id}>
                   <div
                     onClick={() => toggleCategory(cat.id)}
@@ -1348,15 +1490,21 @@ export default function App() {
                       cursor: 'pointer',
                       borderRadius: 6,
                       background: selectedCategory === cat.id ? '#EEEDFE' : 'transparent',
-                      color: selectedCategory === cat.id ? '#534AB7' : '#333',
+                      color: selectedCategory === cat.id ? '#534AB7' : (isGaokao && count === 0 ? '#ccc' : '#333'),
                       fontWeight: 500,
-                      fontSize: 13
+                      fontSize: 13,
+                      justifyContent: 'space-between'
                     }}
                   >
-                    <span style={{ fontSize: 12, color: '#999' }}>{expandedCategories.has(cat.id) ? '−' : '+'}</span>
-                    <span onClick={(e) => { e.stopPropagation(); handleSelectCategory(cat.id) }}>{cat.name}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 12, color: '#999' }}>{expandedCategories.has(cat.id) ? '−' : '+'}</span>
+                      <span onClick={(e) => { e.stopPropagation(); handleSelectCategory(cat.id) }}>{cat.name}</span>
+                    </div>
+                    {isGaokao && count > 0 && <span style={{ fontSize: 11, color: '#999' }}>{count}</span>}
                   </div>
-                  {expandedCategories.has(cat.id) && cat.children?.map(child => (
+                  {expandedCategories.has(cat.id) && cat.children?.map(child => {
+                    const childCount = isGaokao ? questions.filter(q => q.categoryId === child.id).length : 0
+                    return (
                     <div
                       key={child.id}
                       onClick={() => handleSelectCategory(child.id)}
@@ -1365,15 +1513,22 @@ export default function App() {
                         cursor: 'pointer',
                         borderRadius: 6,
                         background: selectedCategory === child.id ? '#EEEDFE' : 'transparent',
-                        color: selectedCategory === child.id ? '#534AB7' : '#666',
-                        fontSize: 13
+                        color: selectedCategory === child.id ? '#534AB7' : (isGaokao && childCount === 0 ? '#ccc' : '#666'),
+                        fontSize: 13,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
                       }}
                     >
-                      {child.name}
+                      <span>{child.name}</span>
+                      {isGaokao && childCount > 0 && <span style={{ fontSize: 11, color: '#999' }}>{childCount}</span>}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
-              ))}
+                )
+              })}
+              </div>
             </div>
 
             {/* 右侧内容 */}
@@ -1421,6 +1576,7 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+                  {!isGaokao && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 13, color: '#666' }}>年级:</span>
                     {['all', '高一', '高二', '高三'].map(g => (
@@ -1441,6 +1597,7 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+                  )}
                 </div>
                 <input
                   type="text"
@@ -1659,17 +1816,27 @@ export default function App() {
                   <input value={editTitle} onChange={e => setEditTitle(e.target.value)} placeholder="简短描述题目内容" style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '0.5px solid #ddd', fontSize: 14, boxSizing: 'border-box' }} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: '#555' }}>知识点分类</label>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: '#555' }}>{isGaokao ? '年份' : '知识点分类'}</label>
                   <select value={editCategory} onChange={e => setEditCategory(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '0.5px solid #ddd', fontSize: 14, boxSizing: 'border-box' }}>
-                    <option value="">请选择分类</option>
-                    {categories.map(cat => (
-                      <optgroup key={cat.id} label={cat.name}>
-                        <option value={cat.id}>{cat.name}</option>
-                        {cat.children?.map(child => (
-                          <option key={child.id} value={child.id}>　{child.name}</option>
-                        ))}
-                      </optgroup>
-                    ))}
+                    <option value="">{isGaokao ? '请选择年份' : '请选择分类'}</option>
+                    {isGaokao ? (
+                      categories.map(cat => (
+                        <optgroup key={cat.id} label={cat.name}>
+                          {cat.children?.map(child => (
+                            <option key={child.id} value={child.id}>{child.name}</option>
+                          ))}
+                        </optgroup>
+                      ))
+                    ) : (
+                      categories.map(cat => (
+                        <optgroup key={cat.id} label={cat.name}>
+                          <option value={cat.id}>{cat.name}</option>
+                          {cat.children?.map(child => (
+                            <option key={child.id} value={child.id}>　{child.name}</option>
+                          ))}
+                        </optgroup>
+                      ))
+                    )}
                   </select>
                 </div>
                 <div>
@@ -1685,7 +1852,7 @@ export default function App() {
                 {(editType === '单选' || editType === '多选') && <span style={{ marginLeft: 8, color: '#666' }}>（\item 将显示为 A.B.C.D. 格式）</span>}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isGaokao ? '1fr 1fr 1fr' : '1fr 1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: '#555' }}>难度</label>
                   <select value={editDifficulty} onChange={e => setEditDifficulty(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '0.5px solid #ddd', fontSize: 14 }}>
@@ -1698,12 +1865,14 @@ export default function App() {
                     {['单选', '多选', '填空', '解答'].map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
+                {!isGaokao && (
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: '#555' }}>年级</label>
                   <select value={editGrade} onChange={e => setEditGrade(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '0.5px solid #ddd', fontSize: 14 }}>
                     {['高一', '高二', '高三'].map(g => <option key={g} value={g}>{g}</option>)}
                   </select>
                 </div>
+                )}
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: '#555' }}>来源</label>
                   <input value={editSource} onChange={e => setEditSource(e.target.value)} placeholder="如：2026年广西模拟" style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '0.5px solid #ddd', fontSize: 14, boxSizing: 'border-box' }} />
@@ -2363,7 +2532,7 @@ export default function App() {
           <div style={{ maxWidth: 1000, margin: '0 auto' }}>
             <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 24 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, gap: 16 }}>
-                <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>旧版组卷</h2>
+                <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, whiteSpace: 'nowrap' }}>旧版组卷</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-end' }}>
                   {/* 第一行：预览按钮 */}
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -2472,15 +2641,129 @@ export default function App() {
           <PdfBatchEntry categories={categories} />
         )}
 
+        {/* ========== 真题PDF套卷页面 ========== */}
+        {activeTab === 'exam-papers' && (
+          <div style={{ maxWidth: 900, margin: '0 auto' }}>
+            {/* 上传区 */}
+            <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 24, marginBottom: 20 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: '#333' }}>📤 上传真题PDF套卷</h3>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div style={{ flex: '1 1 300px' }}>
+                  <label style={{ display: 'block', fontSize: 13, color: '#666', marginBottom: 4 }}>标题（如：2026年全国卷）</label>
+                  <input
+                    type="text"
+                    value={examPdfTitle}
+                    onChange={e => setExamPdfTitle(e.target.value)}
+                    placeholder="请输入试卷标题"
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14, boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div style={{ flex: '1 1 300px' }}>
+                  <label style={{ display: 'block', fontSize: 13, color: '#666', marginBottom: 4 }}>选择PDF文件</label>
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={e => setExamPdfFile(e.target.files?.[0] || null)}
+                    style={{ width: '100%', padding: '7px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14, boxSizing: 'border-box', background: '#fff' }}
+                  />
+                </div>
+                <button
+                  onClick={handleUploadExamPdf}
+                  disabled={examPdfUploading || !examPdfFile}
+                  style={{
+                    padding: '8px 24px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: examPdfUploading || !examPdfFile ? '#ccc' : '#534AB7',
+                    color: '#fff',
+                    cursor: examPdfUploading || !examPdfFile ? 'not-allowed' : 'pointer',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {examPdfUploading ? '上传中...' : '上传'}
+                </button>
+              </div>
+            </div>
+
+            {/* 列表区 */}
+            <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 24 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: '#333' }}>📚 已上传套卷 ({examPdfList.length})</h3>
+              {examPdfList.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: '#999', fontSize: 14 }}>
+                  还没有上传任何套卷，上传第一份吧！
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {examPdfList.map((item, idx) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '14px 16px',
+                        borderRadius: 10,
+                        background: '#f9f9f9',
+                        border: '1px solid #eee',
+                        transition: 'all 0.2s',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => setViewingPdf(item)}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f0f0ec'; (e.currentTarget as HTMLElement).style.borderColor = '#d0d0cc' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#f9f9f9'; (e.currentTarget as HTMLElement).style.borderColor = '#eee' }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                        <span style={{ fontSize: 24 }}>📄</span>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 15, fontWeight: 500, color: '#333', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</div>
+                          <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+                            {item.uploadDate ? new Date(item.uploadDate).toLocaleDateString('zh-CN') : ''} · {(item.size / 1024 / 1024).toFixed(1)} MB
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span style={{ fontSize: 12, color: '#534AB7', fontWeight: 500 }}>点击查看 →</span>
+                        <button
+                          onClick={e => { e.stopPropagation(); handleDeleteExamPdf(item.id, item.title) }}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 6,
+                            border: '1px solid #e0d8d8',
+                            background: '#fff',
+                            color: '#c33',
+                            cursor: 'pointer',
+                            fontSize: 12
+                          }}
+                        >删除</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ========== 关于页面 ========== */}
         {activeTab === 'about' && (
           <div style={{ maxWidth: 600, margin: '0 auto' }}>
             <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 32, textAlign: 'center' }}>
-              <div style={{ fontSize: 64, marginBottom: 16 }}>∑</div>
-              <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>田随林用AI打造的数学试题库</h2>
+              <div style={{ fontSize: 64, marginBottom: 16 }}>{isGaokao ? '📜' : '∑'}</div>
+              <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>{isGaokao ? '历届高考真题库' : '田随林用AI打造的数学试题库'}</h2>
               <p style={{ color: '#666', lineHeight: 1.8, marginBottom: 24 }}>
-                专为热爱数学的老师和同学免费服务！<br/>
-                支持快速组卷，一键导出！祝大家天天进步！
+                {isGaokao ? (
+                  <>
+                    收录 1977-2047 年高考数学真题。<br/>
+                    按年份分类，支持 LaTeX 公式录入、试卷组卷。
+                  </>
+                ) : (
+                  <>
+                    专为热爱数学的老师和同学免费服务！<br/>
+                    支持快速组卷，一键导出！祝大家天天进步！
+                  </>
+                )}
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginTop: 32 }}>
                 <div style={{ padding: 16, background: '#f9f9f9', borderRadius: 8 }}>
@@ -2489,15 +2772,20 @@ export default function App() {
                 </div>
                 <div style={{ padding: 16, background: '#f9f9f9', borderRadius: 8 }}>
                   <div style={{ fontSize: 24, fontWeight: 600, color: '#534AB7' }}>{categories.length}</div>
-                  <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>知识分类</div>
+                  <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>{isGaokao ? '年份数量' : '知识分类'}</div>
                 </div>
                 <div style={{ padding: 16, background: '#f9f9f9', borderRadius: 8 }}>
                   <div style={{ fontSize: 24, fontWeight: 600, color: '#534AB7' }}>{basket.length}</div>
-                  <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>旧版组卷</div>
+                  <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>{isGaokao ? '真题组卷' : '旧版组卷'}</div>
                 </div>
               </div>
             </div>
           </div>
+        )}
+
+        {/* ========== 资源工具页面 ========== */}
+        {activeTab === 'resources' && (
+          <ResourcesPage />
         )}
       </main>
 
@@ -2541,6 +2829,297 @@ export default function App() {
           />
         </div>
       )}
+
+      {/* 真题PDF套卷查看弹窗 */}
+      {viewingPdf && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', flexDirection: 'column'
+        }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '12px 20px', background: '#fff', borderBottom: '1px solid #eee'
+          }}>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>📄 {viewingPdf.title}</span>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <a
+                href={`${API}/uploads/exam-pdfs/${viewingPdf.filename}`}
+                download={viewingPdf.originalName || viewingPdf.title + '.pdf'}
+                style={{ padding: '6px 16px', borderRadius: 6, border: '0.5px solid #ccc', background: '#fff', color: '#666', fontSize: 13, cursor: 'pointer', textDecoration: 'none', display: 'inline-block' }}
+              >
+                下载
+              </a>
+              <button onClick={() => setViewingPdf(null)}
+                style={{ padding: '6px 16px', borderRadius: 6, border: '0.5px solid #ccc', background: '#fff', color: '#666', fontSize: 13, cursor: 'pointer' }}>
+                关闭
+              </button>
+            </div>
+          </div>
+          <iframe
+            src={`${API}/uploads/exam-pdfs/${viewingPdf.filename}`}
+            style={{ flex: 1, border: 'none', width: '100%', background: '#333' }}
+            title={viewingPdf.title}
+          />
+        </div>
+      )}
     </div>
   )
+}
+
+// ==================== 资源工具页面 ====================
+function ResourcesPage() {
+  const [subTab, setSubTab] = useState<'links' | 'installers' | 'commands' | 'ai' | 'others'>('links');
+  const [links, setLinks] = useState<any[]>([]);
+  const [installers, setInstallers] = useState<any[]>([]);
+  const [commands, setCommands] = useState<any[]>([]);
+  const [linkName, setLinkName] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [swName, setSwName] = useState('');
+  const [swFile, setSwFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [cmdName, setCmdName] = useState('');
+  const [cmdCategory, setCmdCategory] = useState('终端命令');
+  const [cmdContent, setCmdContent] = useState('');
+  const [copiedId, setCopiedId] = useState('');
+
+  const SUB_TABS: { key: typeof subTab; label: string }[] = [
+    { key: 'links', label: '学习链接' },
+    { key: 'installers', label: '软件安装包' },
+    { key: 'commands', label: '常用命令' },
+    { key: 'ai', label: 'AI资讯' },
+    { key: 'others', label: '其他' }
+  ];
+
+  const load = async () => {
+    try {
+      const r = await fetch('/api/tools');
+      const d = await r.json();
+      setLinks(d.links || []);
+      setInstallers(d.installers || []);
+      setCommands(d.commands || []);
+    } catch (e) {
+      console.error('加载资源工具失败', e);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const addLink = async () => {
+    if (!linkName.trim() || !linkUrl.trim()) return alert('请填写名称和链接');
+    const r = await fetch('/api/tools/links', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: linkName, url: linkUrl })
+    });
+    if (!r.ok) return alert('添加失败');
+    setLinkName(''); setLinkUrl(''); load();
+  };
+
+  const delLink = async (id: string) => {
+    if (!confirm('确定删除该链接？')) return;
+    const r = await fetch('/api/tools/links/' + id, { method: 'DELETE' });
+    if (r.ok) load();
+  };
+
+  const uploadInstaller = async () => {
+    if (!swFile) return alert('请选择要上传的文件');
+    const fd = new FormData();
+    fd.append('name', swName.trim() || swFile.name);
+    fd.append('file', swFile);
+    setLoading(true);
+    try {
+      const r = await fetch('/api/tools/installers', { method: 'POST', body: fd });
+      if (!r.ok) return alert('上传失败');
+      setSwName(''); setSwFile(null);
+      const fi = document.getElementById('swFileInput') as HTMLInputElement | null;
+      if (fi) fi.value = '';
+      load();
+    } finally { setLoading(false); }
+  };
+
+  const delInstaller = async (id: string) => {
+    if (!confirm('确定删除该安装包？此操作会同时删除磁盘文件。')) return;
+    const r = await fetch('/api/tools/installers/' + id, { method: 'DELETE' });
+    if (r.ok) load();
+  };
+
+  const addCommand = async () => {
+    if (!cmdName.trim()) return alert('请填写名称');
+    if (!cmdContent.trim()) return alert('请填写命令内容');
+    const r = await fetch('/api/tools/commands', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: cmdName, category: cmdCategory, content: cmdContent })
+    });
+    if (!r.ok) return alert('添加失败');
+    setCmdName(''); setCmdContent(''); setCmdCategory('终端命令'); load();
+  };
+
+  const delCommand = async (id: string) => {
+    if (!confirm('确定删除该命令？')) return;
+    const r = await fetch('/api/tools/commands/' + id, { method: 'DELETE' });
+    if (r.ok) load();
+  };
+
+  const copyCommand = async (item: any) => {
+    try {
+      await navigator.clipboard.writeText(item.content);
+      setCopiedId(item.id);
+      setTimeout(() => setCopiedId(''), 1500);
+    } catch {
+      alert('复制失败，请手动选择文本复制');
+    }
+  };
+
+  const fmtSize = (n: number) => {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  };
+
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      <div style={{ display: 'flex', gap: 4, borderBottom: '0.5px solid #e8e8e4', marginBottom: 20, flexWrap: 'wrap' }}>
+        {SUB_TABS.map(t => (
+          <button key={t.key} onClick={() => setSubTab(t.key)} style={{
+            padding: '10px 18px', border: 'none', background: 'transparent',
+            borderBottom: subTab === t.key ? '2px solid #534AB7' : '2px solid transparent',
+            color: subTab === t.key ? '#534AB7' : '#666', cursor: 'pointer',
+            fontSize: 14, fontWeight: 500, marginBottom: -1
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {subTab === 'links' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 16, alignItems: 'start' }}>
+          <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 16 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 12px 0' }}>添加学习链接</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <input value={linkName} onChange={e => setLinkName(e.target.value)} placeholder="名称（如：GeoGebra 经典版）" style={{ padding: '8px 10px', borderRadius: 6, border: '0.5px solid #ccc', fontSize: 13 }} />
+              <input value={linkUrl} onChange={e => setLinkUrl(e.target.value)} placeholder="https://..." style={{ padding: '8px 10px', borderRadius: 6, border: '0.5px solid #ccc', fontSize: 13 }} />
+              <button onClick={addLink} style={{ alignSelf: 'flex-start', padding: '8px 18px', borderRadius: 6, border: 'none', background: '#534AB7', color: '#fff', fontSize: 13, cursor: 'pointer' }}>添加</button>
+            </div>
+          </div>
+          <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 16 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 12px 0' }}>已有链接（{links.length}）</h3>
+            {links.length === 0 && <p style={{ color: '#999', fontSize: 13 }}>暂无链接，先添加一个吧。</p>}
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '0.5px solid #e8e8e4' }}>
+                  <th style={{ padding: '8px 4px', fontWeight: 500, color: '#888' }}>名称</th>
+                  <th style={{ padding: '8px 4px', fontWeight: 500, color: '#888' }}>链接</th>
+                  <th style={{ padding: '8px 4px', fontWeight: 500, color: '#888', width: 70 }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {links.map(l => (
+                  <tr key={l.id} style={{ borderBottom: '0.5px solid #f0f0ec' }}>
+                    <td style={{ padding: '10px 4px' }}>{l.name}</td>
+                    <td style={{ padding: '10px 4px' }}>
+                      <a href={l.url} target="_blank" rel="noreferrer" style={{ color: '#534AB7', textDecoration: 'none', wordBreak: 'break-all' }}>{l.url}</a>
+                    </td>
+                    <td style={{ padding: '10px 4px' }}>
+                      <button onClick={() => delLink(l.id)} style={{ border: 'none', background: 'transparent', color: '#c33', fontSize: 13, cursor: 'pointer' }}>删除</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {subTab === 'installers' && (
+        <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 16 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 12px 0' }}>上传软件安装包</h3>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <input value={swName} onChange={e => setSwName(e.target.value)} placeholder="名称（如：Watt Toolkit 安装包）" style={{ flex: 1, minWidth: 180, padding: '8px 10px', borderRadius: 6, border: '0.5px solid #ccc', fontSize: 13 }} />
+            <input id="swFileInput" type="file" onChange={e => setSwFile(e.target.files ? e.target.files[0] : null)} style={{ flex: 1, minWidth: 180, fontSize: 13 }} />
+            <button onClick={uploadInstaller} disabled={loading} style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: loading ? '#aaa' : '#534AB7', color: '#fff', fontSize: 13, cursor: 'pointer' }}>{loading ? '上传中…' : '上传'}</button>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 16 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '0.5px solid #e8e8e4' }}>
+                <th style={{ padding: '8px 4px', fontWeight: 500, color: '#888' }}>名称</th>
+                <th style={{ padding: '8px 4px', fontWeight: 500, color: '#888' }}>文件名</th>
+                <th style={{ padding: '8px 4px', fontWeight: 500, color: '#888' }}>大小</th>
+                <th style={{ padding: '8px 4px', fontWeight: 500, color: '#888', width: 100 }}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {installers.length === 0 && (
+                <tr><td colSpan={4} style={{ padding: '16px 4px', color: '#999' }}>暂无安装包，先上传一个吧。</td></tr>
+              )}
+              {installers.map(s => (
+                <tr key={s.id} style={{ borderBottom: '0.5px solid #f0f0ec' }}>
+                  <td style={{ padding: '10px 4px' }}>{s.name}</td>
+                  <td style={{ padding: '10px 4px', wordBreak: 'break-all' }}>{s.fileName}</td>
+                  <td style={{ padding: '10px 4px' }}>{fmtSize(s.size)}</td>
+                  <td style={{ padding: '10px 4px' }}>
+                    <a href={`/api/tools/installers/${s.id}/download`} download style={{ color: '#534AB7', textDecoration: 'none', marginRight: 8, fontSize: 13 }}>下载</a>
+                    <button onClick={() => delInstaller(s.id)} style={{ border: 'none', background: 'transparent', color: '#c33', fontSize: 13, cursor: 'pointer' }}>删除</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {subTab === 'commands' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* 添加表单 */}
+          <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 16 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 12px 0' }}>添加常用命令</h3>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+              <input value={cmdName} onChange={e => setCmdName(e.target.value)} placeholder="名称（如：列出端口占用）" style={{ flex: 2, minWidth: 180, padding: '8px 10px', borderRadius: 6, border: '0.5px solid #ccc', fontSize: 13 }} />
+              <select value={cmdCategory} onChange={e => setCmdCategory(e.target.value)} style={{ flex: 1, minWidth: 120, padding: '8px 10px', borderRadius: 6, border: '0.5px solid #ccc', fontSize: 13, background: '#fff' }}>
+                <option>终端命令</option>
+                <option>快捷键</option>
+                <option>其他</option>
+              </select>
+            </div>
+            <textarea value={cmdContent} onChange={e => setCmdContent(e.target.value)} placeholder="命令内容（可多行，如：&#10;netstat -ano | findstr :3001&#10;taskkill /PID 1234 /F）" rows={4} style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6, border: '0.5px solid #ccc', fontSize: 13, fontFamily: 'monospace', resize: 'vertical' }} />
+            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={addCommand} style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: '#534AB7', color: '#fff', fontSize: 13, cursor: 'pointer' }}>添加</button>
+            </div>
+          </div>
+
+          {/* 列表 */}
+          <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 16 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 12px 0' }}>已保存命令（{commands.length}）</h3>
+            {commands.length === 0 && <p style={{ color: '#999', fontSize: 13 }}>暂无命令，先在上方添加一个吧。</p>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {commands.map(c => (
+                <div key={c.id} style={{ border: '0.5px solid #f0f0ec', borderRadius: 8, padding: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 500, color: '#333' }}>{c.name}</span>
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#EEEDFE', color: '#534AB7' }}>{c.category}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <button onClick={() => copyCommand(c)} style={{ border: 'none', background: 'transparent', color: '#534AB7', fontSize: 13, cursor: 'pointer' }}>{copiedId === c.id ? '已复制 ✓' : '复制'}</button>
+                      <button onClick={() => delCommand(c.id)} style={{ border: 'none', background: 'transparent', color: '#c33', fontSize: 13, cursor: 'pointer' }}>删除</button>
+                    </div>
+                  </div>
+                  <pre style={{ margin: 0, padding: 10, background: '#f7f7f5', borderRadius: 6, fontSize: 12.5, lineHeight: 1.6, color: '#333', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'monospace' }}>{c.content}</pre>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {subTab === 'ai' && (
+        <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 32, textAlign: 'center', color: '#999' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🤖</div>
+          <p style={{ fontSize: 14 }}>「AI资讯」模块待扩展，后续可放 AI 相关资讯 / 提示词收藏。</p>
+        </div>
+      )}
+      {subTab === 'others' && (
+        <div style={{ background: '#fff', border: '0.5px solid #e8e8e4', borderRadius: 12, padding: 32, textAlign: 'center', color: '#999' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📦</div>
+          <p style={{ fontSize: 14 }}>「其他」模块待扩展，后续可放任意零散资源。</p>
+        </div>
+      )}
+    </div>
+  );
 }
