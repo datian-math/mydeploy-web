@@ -2892,43 +2892,36 @@ function ResourcesPage() {
 
   const load = async () => {
     try {
-      const r = await fetch('/api/tools');
-      const d = await r.json();
-      setLinks(d.links || []);
-      setInstallers(d.installers || []);
-      setCommands(d.commands || []);
-    } catch (e) {
-      console.error('加载资源工具失败', e);
-    }
+      const [l, i, c] = await Promise.all([
+        import('./lib/tools').then(m => m.fetchLinks()),
+        import('./lib/tools').then(m => m.fetchInstallers()),
+        import('./lib/tools').then(m => m.fetchCommands()),
+      ]);
+      setLinks(l); setInstallers(i); setCommands(c);
+    } catch (e) { console.error('加载资源工具失败', e); }
   };
 
   useEffect(() => { load(); }, []);
 
   const addLink = async () => {
     if (!linkName.trim() || !linkUrl.trim()) return alert('请填写名称和链接');
-    const r = await fetch('/api/tools/links', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: linkName, url: linkUrl })
-    });
-    if (!r.ok) return alert('添加失败');
+    const ok = await (await import('./lib/tools')).addLink(linkName, linkUrl);
+    if (!ok) return alert('添加失败');
     setLinkName(''); setLinkUrl(''); load();
   };
 
-  const delLink = async (id: string) => {
+  const delLink = async (id: number) => {
     if (!confirm('确定删除该链接？')) return;
-    const r = await fetch('/api/tools/links/' + id, { method: 'DELETE' });
-    if (r.ok) load();
+    const ok = await (await import('./lib/tools')).deleteLink(id);
+    if (ok) load();
   };
 
   const uploadInstaller = async () => {
     if (!swFile) return alert('请选择要上传的文件');
-    const fd = new FormData();
-    fd.append('name', swName.trim() || swFile.name);
-    fd.append('file', swFile);
     setLoading(true);
     try {
-      const r = await fetch('/api/tools/installers', { method: 'POST', body: fd });
-      if (!r.ok) return alert('上传失败');
+      const ok = await (await import('./lib/tools')).uploadInstaller(swName.trim() || swFile.name, swFile);
+      if (!ok) return alert('上传失败');
       setSwName(''); setSwFile(null);
       const fi = document.getElementById('swFileInput') as HTMLInputElement | null;
       if (fi) fi.value = '';
@@ -2936,27 +2929,24 @@ function ResourcesPage() {
     } finally { setLoading(false); }
   };
 
-  const delInstaller = async (id: string) => {
-    if (!confirm('确定删除该安装包？此操作会同时删除磁盘文件。')) return;
-    const r = await fetch('/api/tools/installers/' + id, { method: 'DELETE' });
-    if (r.ok) load();
+  const delInstaller = async (id: number) => {
+    if (!confirm('确定删除该安装包？')) return;
+    const ok = await (await import('./lib/tools')).deleteInstaller(id);
+    if (ok) load();
   };
 
   const addCommand = async () => {
     if (!cmdName.trim()) return alert('请填写名称');
     if (!cmdContent.trim()) return alert('请填写命令内容');
-    const r = await fetch('/api/tools/commands', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: cmdName, category: cmdCategory, content: cmdContent })
-    });
-    if (!r.ok) return alert('添加失败');
+    const ok = await (await import('./lib/tools')).addCommand(cmdName, cmdCategory, cmdContent);
+    if (!ok) return alert('添加失败');
     setCmdName(''); setCmdContent(''); setCmdCategory('终端命令'); load();
   };
 
-  const delCommand = async (id: string) => {
+  const delCommand = async (id: number) => {
     if (!confirm('确定删除该命令？')) return;
-    const r = await fetch('/api/tools/commands/' + id, { method: 'DELETE' });
-    if (r.ok) load();
+    const ok = await (await import('./lib/tools')).deleteCommand(id);
+    if (ok) load();
   };
 
   const copyCommand = async (item: any) => {
@@ -3055,7 +3045,7 @@ function ResourcesPage() {
                   <td style={{ padding: '10px 4px', wordBreak: 'break-all' }}>{s.fileName}</td>
                   <td style={{ padding: '10px 4px' }}>{fmtSize(s.size)}</td>
                   <td style={{ padding: '10px 4px' }}>
-                    <a href={`/api/tools/installers/${s.id}/download`} download style={{ color: '#534AB7', textDecoration: 'none', marginRight: 8, fontSize: 13 }}>下载</a>
+                    <a href={s.file_path} download style={{ color: '#534AB7', textDecoration: 'none', marginRight: 8, fontSize: 13 }}>下载</a>
                     <button onClick={() => delInstaller(s.id)} style={{ border: 'none', background: 'transparent', color: '#c33', fontSize: 13, cursor: 'pointer' }}>删除</button>
                   </td>
                 </tr>
