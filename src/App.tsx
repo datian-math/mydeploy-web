@@ -690,9 +690,8 @@ export default function App() {
   // 加载真题PDF套卷列表
   const fetchExamPdfList = async () => {
     try {
-      const res = await fetch(`${API}/api/exam/pdf-papers`)
-      const data = await res.json()
-      setExamPdfList(Array.isArray(data) ? data : [])
+      const data = await (await import('./lib/tools')).fetchExamPapers()
+      setExamPdfList(data)
     } catch (err) {
       console.error('加载PDF套卷列表失败:', err)
     }
@@ -704,17 +703,8 @@ export default function App() {
     if (!examPdfTitle.trim()) { alert('请填写标题'); return }
     setExamPdfUploading(true)
     try {
-      const formData = new FormData()
-      formData.append('pdf', examPdfFile)
-      formData.append('title', examPdfTitle.trim())
-      const res = await fetch(`${API}/api/exam/pdf-papers/upload`, {
-        method: 'POST',
-        body: formData
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || '上传失败')
-      }
+      const ok = await (await import('./lib/tools')).uploadExamPaper(examPdfTitle.trim(), examPdfFile)
+      if (!ok) throw new Error('上传失败')
       setExamPdfTitle('')
       setExamPdfFile(null)
       await fetchExamPdfList()
@@ -730,7 +720,8 @@ export default function App() {
   const handleDeleteExamPdf = async (id: string, title: string) => {
     if (!confirm(`确定删除「${title}」吗？`)) return
     try {
-      await fetch(`${API}/api/exam/pdf-papers/${id}`, { method: 'DELETE' })
+      const ok = await (await import('./lib/tools')).deleteExamPaper(Number(id))
+      if (!ok) throw new Error('删除失败')
       await fetchExamPdfList()
       if (viewingPdf?.id === id) setViewingPdf(null)
     } catch (err) {
@@ -2719,7 +2710,7 @@ export default function App() {
                         <div style={{ minWidth: 0, flex: 1 }}>
                           <div style={{ fontSize: 15, fontWeight: 500, color: '#333', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</div>
                           <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
-                            {item.uploadDate ? new Date(item.uploadDate).toLocaleDateString('zh-CN') : ''} · {(item.size / 1024 / 1024).toFixed(1)} MB
+                            {new Date(item.created_at).toLocaleDateString('zh-CN')} · {(item.size / 1024 / 1024).toFixed(1)} MB
                           </div>
                         </div>
                       </div>
@@ -2843,8 +2834,8 @@ export default function App() {
             <span style={{ fontSize: 15, fontWeight: 600 }}>📄 {viewingPdf.title}</span>
             <div style={{ display: 'flex', gap: 12 }}>
               <a
-                href={`${API}/uploads/exam-pdfs/${viewingPdf.filename}`}
-                download={viewingPdf.originalName || viewingPdf.title + '.pdf'}
+                href={viewingPdf.file_path}
+                download={viewingPdf.file_name || viewingPdf.title + '.pdf'}
                 style={{ padding: '6px 16px', borderRadius: 6, border: '0.5px solid #ccc', background: '#fff', color: '#666', fontSize: 13, cursor: 'pointer', textDecoration: 'none', display: 'inline-block' }}
               >
                 下载
@@ -2856,7 +2847,7 @@ export default function App() {
             </div>
           </div>
           <iframe
-            src={`${API}/uploads/exam-pdfs/${viewingPdf.filename}`}
+            src={viewingPdf.file_path}
             style={{ flex: 1, border: 'none', width: '100%', background: '#333' }}
             title={viewingPdf.title}
           />

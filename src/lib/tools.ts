@@ -67,3 +67,33 @@ export async function deleteInstaller(id: number) {
   if (error) { console.error('deleteInstaller:', error); return false }
   return true
 }
+
+// ===== Exam Papers =====
+export async function fetchExamPapers() {
+  const { data, error } = await supabase.from('math_exam_papers').select('*').order('created_at', { ascending: false })
+  if (error) { console.error('fetchExamPapers:', error); return [] }
+  return data || []
+}
+
+export async function uploadExamPaper(title: string, file: File) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return false
+
+  const filePath = `exams/${user.id}/${Date.now()}_${file.name}`
+  const { error: uploadError } = await supabase.storage.from('post-photos').upload(filePath, file)
+  if (uploadError) { console.error('uploadExamPaper:', uploadError); return false }
+
+  const { data: urlData } = supabase.storage.from('post-photos').getPublicUrl(filePath)
+
+  const { error: dbError } = await supabase.from('math_exam_papers').insert({
+    title, file_name: file.name, file_path: urlData.publicUrl, size: file.size
+  })
+  if (dbError) { console.error('uploadExamPaper db:', dbError); return false }
+  return true
+}
+
+export async function deleteExamPaper(id: number) {
+  const { error } = await supabase.from('math_exam_papers').delete().eq('id', id)
+  if (error) { console.error('deleteExamPaper:', error); return false }
+  return true
+}
