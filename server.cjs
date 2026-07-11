@@ -4080,8 +4080,8 @@ console.log('[PDF Batch Inline] 内联路由和 Doc2X 处理已注册');
 const DIST_DIR = path.join(__dirname, 'dist');
 if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR));
-  // SPA 路由回退
-  app.get('*', (req, res, next) => {
+  // SPA 路由回退（Express 5 语法）
+  app.get('/{*path}', (req, res, next) => {
     if (req.path.startsWith('/api/')) return next();
     res.sendFile(path.join(DIST_DIR, 'index.html'));
   });
