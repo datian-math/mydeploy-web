@@ -5,6 +5,7 @@ import PdfBatchEntry from './PdfBatchEntry'
 import { useAuth } from './lib/auth'
 import { supabase } from './lib/supabase'
 import { fetchBasket as supabaseFetchBasket, addToBasket as supabaseAddToBasket, removeFromBasket as supabaseRemoveFromBasket, clearBasket as supabaseClearBasket, fetchQuestions as supabaseFetchQuestions, fetchCategories as supabaseFetchCategories, createQuestion as supabaseCreateQuestion, updateQuestion as supabaseUpdateQuestion, deleteQuestion as supabaseDeleteQuestion, toFrontendQuestion, toSupabaseQuestion } from './lib/db'
+import { generatePaperClient } from './lib/paperGenerator'
 const ExamComposer = React.lazy(() => import('./composer/ExamComposer'))
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001'
@@ -1372,7 +1373,19 @@ export default function App() {
 
       alert(`${format === 'pdf' ? 'PDF' : 'LaTeX 源码'}下载成功！共 ${basket.length} 道题`)
     } catch (err: any) {
-      alert('导出失败：' + (err.message || '未知错误'))
+      // 服务器不可用，尝试客户端生成（仅 ZIP）
+      try {
+        const blob = await generatePaperClient(basket, '数学试卷', includeAnswer, includeAnalysis);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `数学试卷${includeAnswer ? (includeAnalysis ? '_教师版含解析' : '_教师版') : '_学生版'}.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+        alert(`LaTeX 源码下载成功！共 ${basket.length} 道题\n（服务器不可用，已切换到离线生成）`);
+      } catch (clientErr: any) {
+        alert('导出失败：' + (err.message || '未知错误'));
+      }
     }
   }
 
