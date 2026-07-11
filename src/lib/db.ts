@@ -26,8 +26,10 @@ const INT_TO_DIFF: Record<number, string> = { 1: '易', 2: '中', 3: '中', 4: '
 
 // Supabase → 前端用的格式
 export function toFrontendQuestion(q: Question) {
-  // 修复高考题图片路径（无后端时用相对路径）
-  const fixImgPath = (s: string) => s.replace(/\/api\/exam-images\//g, './exam-images/')
+  // 修复高考题图片路径：本地服务器用 /api/exam-images/，GitHub Pages 用绝对路径
+  const isGitHubPages = typeof window !== 'undefined' && window.location.hostname.includes('github.io')
+  const imgBase = isGitHubPages ? '/mydeploy-web/exam-images/' : '/api/exam-images/'
+  const fixImgPath = (s: string) => isGitHubPages ? s.replace(/\/api\/exam-images\//g, imgBase) : s
   return {
     id: q.id,
     title: '',
