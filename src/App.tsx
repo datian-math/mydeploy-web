@@ -4,11 +4,10 @@ import DownloadedPapers from './DownloadedPapers'
 import PdfBatchEntry from './PdfBatchEntry'
 import { useAuth } from './lib/auth'
 import { supabase } from './lib/supabase'
-import { fetchBasket as supabaseFetchBasket, addToBasket as supabaseAddToBasket, removeFromBasket as supabaseRemoveFromBasket, clearBasket as supabaseClearBasket } from './lib/db'
+import { fetchBasket as supabaseFetchBasket, addToBasket as supabaseAddToBasket, removeFromBasket as supabaseRemoveFromBasket, clearBasket as supabaseClearBasket, fetchQuestions as supabaseFetchQuestions, fetchCategories as supabaseFetchCategories, createQuestion as supabaseCreateQuestion, updateQuestion as supabaseUpdateQuestion, deleteQuestion as supabaseDeleteQuestion, toFrontendQuestion, toSupabaseQuestion } from './lib/db'
 const ExamComposer = React.lazy(() => import('./composer/ExamComposer'))
 
-const API = 'http://localhost:3001'
-const USE_SUPABASE_BASKET = true
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
 // MathJax 全局类型声明
 declare global {
@@ -525,14 +524,13 @@ interface Question {
 }
 
 export default function App() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, isAdmin } = useAuth()
 
   // 页面状态
   const [activeTab, setActiveTab] = useState<'bank' | 'editor' | 'basket' | 'composer' | 'import' | 'papers' | 'about' | 'pdf-batch' | 'exam-papers' | 'resources'>('bank')
   
   // 板块模式：normal=普通题库  gaokao=历届高考真题
   const [bankMode, setBankMode] = useState<'normal' | 'gaokao'>('normal')
-  const apiBase = bankMode === 'gaokao' ? '/api/exam' : '/api'
   const isGaokao = bankMode === 'gaokao'
   
   // 数据状态
@@ -626,17 +624,35 @@ export default function App() {
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch(`${API}${apiBase}/categories`)
-      const data = await res.json()
-      // 如果数据有parentId字段（高考真题模式），转换为树形结构
-      if (data.length > 0 && data[0].parentId !== undefined) {
-        const parents = data.filter((c: any) => !c.parentId)
-        const tree = parents.map((p: any) => ({
-          ...p,
-          children: data.filter((c: any) => c.parentId === p.id)
-        }))
-        setCategories(tree)
+      if (isGaokao) {
+        // 高考模式：从题目中构建"年份→试卷类型"层级树
+        const { data: rows } = await supabase
+          .from('math_questions')
+          .select('category, subcategory')
+          .like('id', 'eq-%')
+        if (rows) {
+          // 按年份分组：从 category 中提取年份（如"2047年上海卷高考真题"→"2047年"）
+          const yearMap = new Map<string, Map<string, string>>()
+          for (const r of rows) {
+            const catName = r.category || ''
+            const yearMatch = catName.match(/^(\d{4})年/)
+            if (!yearMatch) continue
+            const year = yearMatch[1] + '年高考真题'
+            const catId = r.subcategory || catName
+            if (!yearMap.has(year)) yearMap.set(year, new Map())
+            yearMap.get(year)!.set(catId, catName)
+          }
+          const tree = Array.from(yearMap.entries())
+            .sort((a, b) => b[0].localeCompare(a[0])) // 年份倒序
+            .map(([year, exams]) => ({
+              id: year,
+              name: year,
+              children: Array.from(exams.entries()).map(([id, name]) => ({ id, name }))
+            }))
+          setCategories(tree)
+        }
       } else {
+        const data = await supabaseFetchCategories()
         setCategories(data)
       }
     } catch (err) {
@@ -657,34 +673,103 @@ export default function App() {
 
   const fetchQuestions = async () => {
     try {
-      const params = new URLSearchParams()
-      if (selectedCategory) params.append('category', selectedCategory)
-      if (selectedDifficulty !== 'all') params.append('difficulty', selectedDifficulty)
-      if (selectedType !== 'all') params.append('type', selectedType)
-      if (selectedGrade !== 'all') params.append('grade', selectedGrade)
-      if (searchKeyword) params.append('keyword', searchKeyword)
-      
-      const res = await fetch(`${API}${apiBase}/questions?${params}`)
-      const data = await res.json()
-      setQuestions(Array.isArray(data) ? data.map(normalizeQuestion) : [])
+      const filters: any = {}
+      let filterCategoryName = ''
+      let filterSubcategoryId = ''
+      if (selectedCategory) {
+        if (isGaokao) {
+          // 高考模式：父级按年份匹配（category LIKE "2026年%"），子级按名称精确匹配
+          const found = categories.flatMap((c: any) => [c, ...(c.children || [])]).find((c: any) => c.id === selectedCategory)
+          if (found) {
+            if (found.children !== undefined) {
+              // 父级（年份）：用 LIKE 前缀匹配
+              const yearPrefix = found.name.replace('年高考真题', '年')
+              filterCategoryName = yearPrefix + '%'
+            } else {
+              // 子级（具体试卷）：用 category 精确匹配
+              filterCategoryName = found.name
+            }
+          }
+        } else {
+          // 普通模式：用 categoryId（存储在 subcategory 字段）前缀匹配
+          // 所有题目只有父级标签（cat-5），子分类也按父级前缀匹配（cat-5%）
+          const allCats = categories.flatMap((c: any) => [c, ...(c.children || [])])
+          const found = allCats.find((c: any) => c.id === selectedCategory)
+          if (found) {
+            if (found.children !== undefined) {
+              // 父级分类：前缀匹配（如 cat-5 匹配 cat-5, cat-5-1...）
+              filterSubcategoryId = found.id + '%'
+            } else {
+              // 子级分类：找到父级，用父级前缀匹配
+              const parent = categories.find((c: any) => c.children?.some((ch: any) => ch.id === selectedCategory))
+              filterSubcategoryId = (parent?.id || found.id) + '%'
+            }
+          }
+        }
+      }
+      if (selectedDifficulty !== 'all') {
+        const dm: Record<string, number> = { '易': 1, '中': 3, '难': 5 }
+        filters.difficulty = dm[selectedDifficulty]
+      }
+      if (selectedType !== 'all') filters.type = selectedType
+      if (searchKeyword) filters.search = searchKeyword
+
+      let data: any[]
+      if (isGaokao) {
+        // 高考模式：分批拉取（Supabase 单次上限 1000）
+        let allData: any[] = []
+        let from = 0
+        const batchSize = 1000
+        while (true) {
+          let query = supabase.from('math_questions').select('*').like('id', 'eq-%')
+          if (filterCategoryName) {
+            if (filterCategoryName.endsWith('%')) {
+              query = query.ilike('category', filterCategoryName)
+            } else {
+              query = query.eq('category', filterCategoryName)
+            }
+          }
+          if (filterSubcategoryId) query = query.eq('subcategory', filterSubcategoryId)
+          if (filters.difficulty) query = query.eq('difficulty', filters.difficulty)
+          if (filters.type) query = query.eq('type', filters.type)
+          if (filters.search) query = query.ilike('content', `%${filters.search}%`)
+          query = query.order('created_at', { ascending: false }).range(from, from + batchSize - 1)
+          const res = await query
+          if (res.error || !res.data || res.data.length === 0) break
+          allData = allData.concat(res.data)
+          if (res.data.length < batchSize) break
+          from += batchSize
+        }
+        data = allData
+      } else {
+        // 普通模式排除 eq- 开头的题目
+        let query = supabase.from('math_questions').select('*').not('id', 'like', 'eq-%')
+        if (filterCategoryName) query = query.eq('category', filterCategoryName)
+        if (filterSubcategoryId) {
+          if (filterSubcategoryId.endsWith('%')) {
+            query = query.ilike('subcategory', filterSubcategoryId)
+          } else {
+            query = query.eq('subcategory', filterSubcategoryId)
+          }
+        }
+        if (filters.difficulty) query = query.eq('difficulty', filters.difficulty)
+        if (filters.type) query = query.eq('type', filters.type)
+        if (filters.search) query = query.ilike('content', `%${filters.search}%`)
+        query = query.order('created_at', { ascending: false })
+        const res = await query
+        if (res.error) { console.error('questions:', res.error); return }
+        data = res.data || []
+      }
+
+      setQuestions(data.map(toFrontendQuestion))
     } catch (err) {
       console.error('加载试题失败:', err)
     }
   }
 
   const fetchBasket = async () => {
-    if (USE_SUPABASE_BASKET) {
-      const ids = await supabaseFetchBasket()
-      setBasket(ids)
-      return
-    }
-    try {
-      const res = await fetch(`${API}${apiBase}/basket`)
-      const data = await res.json()
-      setBasket(data.map((item: any) => item.questionId))
-    } catch (err) {
-      console.error('加载试卷篮失败:', err)
-    }
+    const ids = await supabaseFetchBasket()
+    setBasket(ids)
   }
 
   // 加载真题PDF套卷列表
@@ -799,15 +884,7 @@ export default function App() {
   // 接受 AI 解析：将 AI 生成的内容写入题目，并刷新列表
   const handleAcceptAiAnalysis = async (qid: string) => {
     try {
-      const q = questions.find((item: any) => item.id === qid)
-      if (!q) return
-      const body: any = { analysis: aiPreviewContent }
-      // 只更新 analysis，不影响其他字段
-      await fetch(`${API}${apiBase}/questions/${qid}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      })
+      await supabaseUpdateQuestion(qid, { analysis: aiPreviewContent })
       setAiPreviewQid(null)
       setAiPreviewContent('')
       fetchQuestions()
@@ -962,11 +1039,7 @@ export default function App() {
   // 添加到试卷篮
   const addToBasket = async (questionId: string) => {
     try {
-      await fetch(`${API}${apiBase}/basket`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questionId })
-      })
+      await supabaseAddToBasket(questionId)
       setBasket(prev => [...prev, questionId])
     } catch (err) {
       alert('添加失败')
@@ -976,7 +1049,7 @@ export default function App() {
   // 从试卷篮移除
   const removeFromBasket = async (questionId: string) => {
     try {
-      await fetch(`${API}${apiBase}/basket/${questionId}`, { method: 'DELETE' })
+      await supabaseRemoveFromBasket(questionId)
       setBasket(prev => prev.filter(id => id !== questionId))
     } catch (err) {
       alert('移除失败')
@@ -1106,17 +1179,10 @@ export default function App() {
     }
 
     try {
-      const url = editingQuestion
-        ? `${API}${apiBase}/questions/${editingQuestion.id}`
-        : `${API}${apiBase}/questions`
-      const res = await fetch(url, {
-        method: editingQuestion ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(questionData)
-      })
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        throw new Error(`HTTP ${res.status}: ${text}`)
+      if (editingQuestion) {
+        await supabaseUpdateQuestion(editingQuestion.id, questionData)
+      } else {
+        await supabaseCreateQuestion({ ...questionData, id: 'q-' + Date.now() })
       }
       
       // 重置表单
@@ -1215,7 +1281,7 @@ export default function App() {
   const handleDelete = async (id: string) => {
     if (!confirm('确定要删除这道题吗？')) return
     try {
-      await fetch(`${API}${apiBase}/questions/${id}`, { method: 'DELETE' })
+      await supabaseDeleteQuestion(id)
       fetchQuestions()
       setBasket(prev => prev.filter(bid => bid !== id))
     } catch (err) {
@@ -1278,6 +1344,13 @@ export default function App() {
         })
       })
 
+      // 503 表示服务器没有 xelatex，自动降级为 ZIP 格式
+      if (res.status === 503 && format === 'pdf') {
+        const data = await res.json().catch(() => ({ error: 'PDF 不可用' }));
+        alert(data.error + '\n\n点击确定将下载 LaTeX 源码 (.zip)');
+        return handleGeneratePaper(includeAnswer, includeAnalysis, 'zip', paperSize);
+      }
+
       if (!res.ok) {
         const errorText = await res.text()
         throw new Error(errorText || '服务器错误')
@@ -1307,7 +1380,7 @@ export default function App() {
   const handleClearBasket = async () => {
     if (!confirm('确定要清空旧版组卷吗？')) return
     try {
-      await fetch(`${API}${apiBase}/basket`, { method: 'DELETE' })
+      await supabaseClearBasket()
       setBasket([])
     } catch (err) {
       alert('清空失败')
@@ -1687,7 +1760,7 @@ export default function App() {
                             {basket.includes(q.id) ? '✓ 已添加' : '+ 加入试题篮'}
                           </button>
                           <button onClick={() => handleEdit(q)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 4, border: '0.5px solid #ddd', background: 'transparent', cursor: 'pointer' }}>编辑</button>
-                          <button onClick={() => handleDelete(q.id)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 4, border: '0.5px solid #fcc', background: '#fee', color: '#c33', cursor: 'pointer' }}>删除</button>
+                          {isAdmin && <button onClick={() => handleDelete(q.id)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 4, border: '0.5px solid #fcc', background: '#fee', color: '#c33', cursor: 'pointer' }}>删除</button>}
                         </div>
                       </div>
                       {(() => {

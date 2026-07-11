@@ -79,7 +79,17 @@ export async function uploadExamPaper(title: string, file: File) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false
 
-  const filePath = `exams/${user.id}/${Date.now()}_${file.name}`
+  // 清理文件名：去空格、去中文、只保留安全字符
+  const ext = file.name.substring(file.name.lastIndexOf('.'))
+  const safeName = file.name
+    .replace(/\.[^.]+$/, '')  // 去扩展名
+    .replace(/[^\x00-\x7F]/g, '')  // 去非 ASCII（中文等）
+    .replace(/[\s()（）]+/g, '_')  // 空格和括号换下划线
+    .replace(/[^a-zA-Z0-9_.-]/g, '')  // 只保留安全字符
+    .substring(0, 50)  // 限制长度
+  const cleanName = (safeName || 'file') + '_' + Date.now() + ext
+
+  const filePath = `exams/${user.id}/${cleanName}`
   const { error: uploadError } = await supabase.storage.from('post-photos').upload(filePath, file)
   if (uploadError) { console.error('uploadExamPaper:', uploadError); return false }
 

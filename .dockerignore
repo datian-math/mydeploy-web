@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+*.log
+test_*
+batch_sessions
+batch_uploads
+mineru_test
+mineru_v4_output
+previews
+__pycache__
