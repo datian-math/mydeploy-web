@@ -27,10 +27,11 @@ let supabaseReady = false;
   try {
     if (supabaseEmail && supabasePassword) {
       const { error } = await supabase.auth.signInWithPassword({ email: supabaseEmail, password: supabasePassword });
-    if (error) {
-      console.warn('Supabase 登录失败（anon key 模式）:', error.message);
-    } else {
-      console.log('Supabase 已登录');
+      if (error) {
+        console.warn('Supabase 登录失败（anon key 模式）:', error.message);
+      } else {
+        console.log('Supabase 已登录');
+      }
     }
     supabaseReady = true;
   } catch (e) {
