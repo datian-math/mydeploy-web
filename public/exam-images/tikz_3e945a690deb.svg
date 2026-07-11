@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="81.23pt" height="81.23pt" viewBox="0 0 81.23 81.23" version="1.2">
+<defs>
+<clipPath id="clip1">
+  <path d="M 41 0 L 80.46875 0 L 80.46875 39 L 41 39 Z M 41 0 "/>
+</clipPath>
+<clipPath id="clip2">
+  <path d="M 0 41 L 39 41 L 39 80.46875 L 0 80.46875 Z M 0 41 "/>
+</clipPath>
+</defs>
+<g id="surface1">
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M 0.000467746 0.000304229 L 0.000467746 28.348532 L 28.348696 28.348532 L 28.348696 0.000304229 Z M 0.000467746 0.000304229 " transform="matrix(0.99061,0,0,-0.99061,5.132349,33.215145)"/>
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M 0.000467746 0.000304229 L 28.348696 28.348532 " transform="matrix(0.99061,0,0,-0.99061,5.132349,33.215145)"/>
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M 42.520838 0.000304229 L 42.520838 28.348532 L 70.865123 28.348532 L 70.865123 0.000304229 Z M 42.520838 0.000304229 " transform="matrix(0.99061,0,0,-0.99061,5.132349,33.215145)"/>
+<g clip-path="url(#clip1)" clip-rule="nonzero">
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M 70.865123 0.000304229 L 42.520838 28.348532 " transform="matrix(0.99061,0,0,-0.99061,5.132349,33.215145)"/>
+</g>
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M 0.000467746 -14.171838 L 0.000467746 -42.520066 L 28.348696 -42.520066 L 28.348696 -14.171838 Z M 0.000467746 -14.171838 " transform="matrix(0.99061,0,0,-0.99061,5.132349,33.215145)"/>
+<g clip-path="url(#clip2)" clip-rule="nonzero">
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M 0.000467746 -14.171838 L 28.348696 -42.520066 " transform="matrix(0.99061,0,0,-0.99061,5.132349,33.215145)"/>
+</g>
+</g>
+</svg>

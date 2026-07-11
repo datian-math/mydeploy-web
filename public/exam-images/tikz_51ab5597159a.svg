@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="101.07pt" height="112.41pt" viewBox="0 0 101.07 112.41" version="1.2">
+<defs>
+<clipPath id="clip1">
+  <path d="M 0 44 L 67 44 L 67 111.605469 L 0 111.605469 Z M 0 44 "/>
+</clipPath>
+<clipPath id="clip2">
+  <path d="M 33 0.21875 L 100.148438 0.21875 L 100.148438 68 L 33 68 Z M 33 0.21875 "/>
+</clipPath>
+</defs>
+<g id="surface1">
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M -0.000957703 -0.00119627 L -0.000957703 102.046425 L 90.708915 102.046425 L 90.708915 -0.00119627 Z M -0.000957703 -0.00119627 " transform="matrix(0.990882,0,0,-0.990882,5.133761,106.471471)"/>
+<g clip-path="url(#clip1)" clip-rule="nonzero">
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M 56.691727 28.347117 C 56.691727 44.001568 44.001806 56.691489 28.347356 56.691489 C 12.688963 56.691489 -0.000957703 44.001568 -0.000957703 28.347117 C -0.000957703 12.692667 12.688963 -0.00119627 28.347356 -0.00119627 C 44.001806 -0.00119627 56.691727 12.692667 56.691727 28.347117 Z M 56.691727 28.347117 " transform="matrix(0.990882,0,0,-0.990882,5.133761,106.471471)"/>
+</g>
+<g clip-path="url(#clip2)" clip-rule="nonzero">
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M 90.708915 73.702054 C 90.708915 89.356504 78.018994 102.046425 62.360602 102.046425 C 46.706151 102.046425 34.01623 89.356504 34.01623 73.702054 C 34.01623 58.043661 46.706151 45.35374 62.360602 45.35374 C 78.018994 45.35374 90.708915 58.043661 90.708915 73.702054 Z M 90.708915 73.702054 " transform="matrix(0.990882,0,0,-0.990882,5.133761,106.471471)"/>
+</g>
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M 28.347356 28.347117 L 62.360602 28.347117 L 62.360602 73.702054 Z M 28.347356 28.347117 " transform="matrix(0.990882,0,0,-0.990882,5.133761,106.471471)"/>
+</g>
+</svg>

@@ -347,6 +347,8 @@ function MathJaxPreview({ latex, imageUrls, questionType, style }: {
     try {
     // 预处理 LaTeX
     let processed = preprocessLatex(latex, questionType)
+    // 修复高考题图片路径（GitHub Pages 无后端，改为相对路径）
+    processed = processed.replace(/\/api\/exam-images\//g, './exam-images/')
     // 转换表格语法为 HTML 表格（MathJax 不支持 tabular）
     processed = convertLatexTables(processed)
     // 为未包裹的原始 LaTeX 数学内容添加定界符
@@ -1780,6 +1782,8 @@ export default function App() {
                         // 若已通过 options 数组单独渲染选项，则从 content 中剥离 \item 行和 \img{}，避免重复显示
                         // \img{} 抽出来放到选项**后面**渲染，不在题目和选项之间
                         let displayContent = q.content
+                        // 修复高考题图片路径：/api/exam-images/ → 相对路径（GitHub Pages兼容）
+                        displayContent = displayContent.replace(/\/api\/exam-images\//g, './exam-images/')
                         let trailingImgs = ''
                         if (q.options && q.options.length > 0) {
                           if (/\\item\s*/.test(displayContent)) {

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="95.4pt" height="95.4pt" viewBox="0 0 95.4 95.4" version="1.2">
+<defs>
+<clipPath id="clip1">
+  <path d="M 0 30 L 52 30 L 52 94.804688 L 0 94.804688 Z M 0 30 "/>
+</clipPath>
+<clipPath id="clip2">
+  <path d="M 30 43 L 94.804688 43 L 94.804688 94.804688 L 30 94.804688 Z M 30 43 "/>
+</clipPath>
+<clipPath id="clip3">
+  <path d="M 43 0 L 94.804688 0 L 94.804688 65 L 43 65 Z M 43 0 "/>
+</clipPath>
+</defs>
+<g id="surface1">
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M -0.00018239 -0.000125786 L -0.00018239 85.043113 L 85.043057 85.043113 L 85.043057 -0.000125786 Z M -0.00018239 -0.000125786 " transform="matrix(0.99375,0,0,-0.99375,5.148619,89.656125)"/>
+<g clip-path="url(#clip1)" clip-rule="nonzero">
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M -0.00018239 -0.000125786 L 40.943214 54.335566 " transform="matrix(0.99375,0,0,-0.99375,5.148619,89.656125)"/>
+</g>
+<g clip-path="url(#clip2)" clip-rule="nonzero">
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M 85.043057 -0.000125786 L 30.707365 40.94327 " transform="matrix(0.99375,0,0,-0.99375,5.148619,89.656125)"/>
+</g>
+<g clip-path="url(#clip3)" clip-rule="nonzero">
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M 85.043057 85.043113 L 44.09573 30.707421 " transform="matrix(0.99375,0,0,-0.99375,5.148619,89.656125)"/>
+</g>
+<path style="fill:none;stroke-width:0.3985;stroke-linecap:butt;stroke-linejoin:miter;stroke:rgb(0%,0%,0%);stroke-opacity:1;stroke-miterlimit:10;" d="M -0.00018239 85.043113 L 54.335509 44.095786 " transform="matrix(0.99375,0,0,-0.99375,5.148619,89.656125)"/>
+</g>
+</svg>
