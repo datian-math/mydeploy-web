@@ -9,7 +9,7 @@ RUN npx vite build
 # 阶段2：生产运行
 FROM node:22-slim
 
-# 安装 tectonic（轻量 LaTeX 引擎）
+# 安装 tectonic（轻量 LaTeX 引擎，约 50MB）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget ca-certificates \
     && wget -q https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-x86_64-unknown-linux-gnu.tar.gz \
@@ -24,11 +24,10 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY server.cjs ./
-COPY data/ ./data/
-COPY uploads/ ./uploads/
 COPY --from=builder /app/dist ./dist
 
-RUN mkdir -p data/pdf_exports data/auto-save
+# 创建运行时需要的目录（数据从 Supabase 读取）
+RUN mkdir -p uploads/images uploads/exam-pdfs data/pdf_exports data/auto-save data/exam_images data/batch_sessions data/batch_uploads data/papers data/previews
 
 ENV PORT=3001
 ENV NODE_ENV=production
