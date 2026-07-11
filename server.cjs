@@ -9,7 +9,18 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 const sharp = require('sharp');
-const { Resvg } = require('@resvg/resvg-js');
+let sharp = null;
+try {
+  sharp = require('sharp');
+} catch (e) {
+  console.warn('sharp 未安装，图片处理降级');
+}
+let Resvg = null;
+try {
+  Resvg = require('@resvg/resvg-js').Resvg;
+} catch (e) {
+  console.warn('@resvg/resvg-js 未安装，SVG图片将跳过');
+}
 const https = require('https');
 const http = require('http');
 const { createClient } = require('@supabase/supabase-js');
@@ -1375,12 +1386,14 @@ app.post('/api/generate-paper', async (req, res) => {
             });
           } else if (fs.existsSync(sourcePath)) {
             // 本地文件
-            if (sourcePath.toLowerCase().endsWith('.svg')) {
+            if (sourcePath.toLowerCase().endsWith('.svg') && Resvg) {
               const svgContent = fs.readFileSync(sourcePath, 'utf8');
               const resvg = new Resvg(svgContent, { fitTo: { mode: 'width', value: 800 } });
               fs.writeFileSync(dest, resvg.render().asPng());
-            } else {
+            } else if (sharp) {
               await sharp(sourcePath).jpeg({ quality: 92 }).toFile(dest);
+            } else {
+              fs.copyFileSync(sourcePath, dest);
             }
           } else {
             console.error('[generate-paper] 图片源不可用:', filename);

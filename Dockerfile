@@ -2,7 +2,7 @@
 FROM node:22-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install
 COPY . .
 RUN npx vite build
 
@@ -21,13 +21,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 COPY server.cjs ./
 COPY --from=builder /app/dist ./dist
 
-# 创建运行时需要的目录（数据从 Supabase 读取）
-RUN mkdir -p uploads/images uploads/exam-pdfs data/pdf_exports data/auto-save data/exam_images data/batch_sessions data/batch_uploads data/papers data/previews
+# 创建运行时需要的目录
+RUN mkdir -p uploads/images data/pdf_exports data/auto-save data/exam_images data/batch_sessions data/batch_uploads data/papers data/previews
 
 ENV PORT=3001
 ENV NODE_ENV=production
