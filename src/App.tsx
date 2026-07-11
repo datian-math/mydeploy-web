@@ -629,32 +629,36 @@ export default function App() {
   const fetchCategories = async () => {
     try {
       if (isGaokao) {
-        // 高考模式：从题目中构建"年份→试卷类型"层级树
-        const { data: rows } = await supabase
-          .from('math_questions')
-          .select('category, subcategory')
-          .like('id', 'eq-%')
-        if (rows) {
-          // 按年份分组：从 category 中提取年份（如"2047年上海卷高考真题"→"2047年"）
-          const yearMap = new Map<string, Map<string, string>>()
+        // 高考模式：分批查出所有分类（Supabase 单次上限 1000）
+        const catMap = new Map<string, Map<string, string>>()
+        let from = 0
+        while (true) {
+          const { data: rows } = await supabase
+            .from('math_questions')
+            .select('category, subcategory')
+            .like('id', 'eq-%')
+            .range(from, from + 999)
+          if (!rows || rows.length === 0) break
           for (const r of rows) {
             const catName = r.category || ''
             const yearMatch = catName.match(/^(\d{4})年/)
             if (!yearMatch) continue
             const year = yearMatch[1] + '年高考真题'
             const catId = r.subcategory || catName
-            if (!yearMap.has(year)) yearMap.set(year, new Map())
-            yearMap.get(year)!.set(catId, catName)
+            if (!catMap.has(year)) catMap.set(year, new Map())
+            catMap.get(year)!.set(catId, catName)
           }
-          const tree = Array.from(yearMap.entries())
-            .sort((a, b) => b[0].localeCompare(a[0])) // 年份倒序
-            .map(([year, exams]) => ({
-              id: year,
-              name: year,
-              children: Array.from(exams.entries()).map(([id, name]) => ({ id, name }))
-            }))
-          setCategories(tree)
+          if (rows.length < 1000) break
+          from += 1000
         }
+        const tree = Array.from(catMap.entries())
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .map(([year, exams]) => ({
+            id: year,
+            name: year,
+            children: Array.from(exams.entries()).map(([id, name]) => ({ id, name }))
+          }))
+        setCategories(tree)
       } else {
         const data = await supabaseFetchCategories()
         setCategories(data)
