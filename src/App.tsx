@@ -1493,7 +1493,7 @@ export default function App() {
             {user && (
               <button onClick={async () => {
                 const { data: { session } } = await supabase.auth.getSession()
-                const base = 'https://classmate-map.vercel.app'
+                const base = 'https://classmate-map.netlify.app'
                 const hash = session ? `access_token=${session.access_token}&refresh_token=${session.refresh_token || ''}` : ''
                 window.open(`${base}#${hash}`, '_blank')
               }} style={{ marginLeft: 8, padding: '3px 10px', borderRadius: 6, border: '0.5px solid #fdba74', background: '#fff7ed', color: '#f97316', fontSize: 12, cursor: 'pointer' }}>蹭饭图</button>
