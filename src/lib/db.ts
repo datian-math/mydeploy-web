@@ -26,13 +26,15 @@ const INT_TO_DIFF: Record<number, string> = { 1: '易', 2: '中', 3: '中', 4: '
 
 // Supabase → 前端用的格式
 export function toFrontendQuestion(q: Question) {
+  // 修复高考题图片路径（无后端时用相对路径）
+  const fixImgPath = (s: string) => s.replace(/\/api\/exam-images\//g, './exam-images/')
   return {
     id: q.id,
     title: '',
-    content: q.content || '',
+    content: fixImgPath(q.content || ''),
     answer: q.answer || '',
     answerContent: '',
-    analysis: q.solution || '',
+    analysis: fixImgPath(q.solution || ''),
     options: [] as string[],
     difficulty: INT_TO_DIFF[q.difficulty || 3] || '中',
     type: q.type || '解答',
