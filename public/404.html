@@ -4,9 +4,10 @@
   <meta charset="utf-8">
   <title>大田的数学空间</title>
   <script>
-    // SPA 路由：把路径存到 sessionStorage，然后跳回首页
-    sessionStorage.redirect = location.pathname + location.search + location.hash;
-    location.replace(new URL('./', location.href));
+    // SPA 路由：GitHub Pages 不支持直接的重定向，用 sessionStorage 保存路径
+    var path = location.pathname.replace(/\/mydeploy-web/, '') || '/';
+    sessionStorage.setItem('redirect', path + location.search + location.hash);
+    location.replace('/mydeploy-web/');
   </script>
 </head>
 <body></body>
