@@ -8,7 +8,6 @@ const JSZip = require('jszip');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
-const sharp = require('sharp');
 let sharp = null;
 try {
   sharp = require('sharp');
