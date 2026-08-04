@@ -1343,8 +1343,8 @@ app.post('/api/generate-paper', async (req, res) => {
 
   // 返回 PDF（xelatex 编译）
   if (format === 'pdf') {
-    // 检查 LaTeX 引擎是否可用
-    const engine = USE_TECTONIC ? TECTONIC_PATH : XELATEX_PATH;
+    // 实时检查 LaTeX 引擎（tectonic 可能启动后才下载完成）
+    const engine = (fs.existsSync(XELATEX_PATH) && !USE_TECTONIC) ? XELATEX_PATH : TECTONIC_PATH;
     if (!fs.existsSync(engine)) {
       res.status(503).json({ error: 'PDF 编译需要 LaTeX 环境，请下载 ZIP 源码后在本地编译' });
       return;
@@ -1395,7 +1395,7 @@ app.post('/api/generate-paper', async (req, res) => {
     try {
       // 编译两次（处理交叉引用）
       // ⚠️ 必须设置 cwd 为 workDir，否则 \graphicspath{{./images/}} 会基于服务器进程 cwd 找图片
-      if (USE_TECTONIC) {
+      if (engine === TECTONIC_PATH) {
         console.log('[tectonic] 开始编译...');
         let log1 = await runXelatex(engine, ['--outdir', workDir, texFile], workDir);
         console.log('[tectonic 第1遍]\n', log1.slice(0, 500));
