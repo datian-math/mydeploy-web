@@ -2458,8 +2458,15 @@ const TECTONIC_CANDIDATES = [
   path.join(__dirname, 'tectonic'),
 ];
 const XELATEX_PATH = XELATEX_CANDIDATES.find(p => fs.existsSync(p)) || XELATEX_CANDIDATES[0];
-const TECTONIC_PATH = TECTONIC_CANDIDATES.find(p => fs.existsSync(p)) || TECTONIC_CANDIDATES[0];
-const USE_TECTONIC = !fs.existsSync(XELATEX_PATH) && fs.existsSync(TECTONIC_PATH);
+let TECTONIC_PATH = TECTONIC_CANDIDATES.find(p => fs.existsSync(p)) || '';
+// 尝试从 PATH 解析 tectonic（Nixpacks 等安装方式）
+if (!TECTONIC_PATH) {
+  try {
+    const { execSync } = require('child_process');
+    TECTONIC_PATH = execSync('which tectonic 2>/dev/null || echo ""').toString().trim();
+  } catch (e) { TECTONIC_PATH = ''; }
+}
+const USE_TECTONIC = !fs.existsSync(XELATEX_PATH) && TECTONIC_PATH && fs.existsSync(TECTONIC_PATH);
 
 if (fs.existsSync(XELATEX_PATH)) {
   console.log('[xelatex] 探测到路径:', XELATEX_PATH);
