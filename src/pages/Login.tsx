@@ -112,7 +112,7 @@ export default function Login() {
         <p style={{ textAlign: 'center', fontSize: 12, color: '#bbb', marginTop: 24 }}>
           没有账号？{' '}
           <a
-            href="https://classmate-map.vercel.app"
+            href="https://datian-math.github.io/classmate-map"
             target="_blank"
             title="先去蹭饭图网页注册，注册好了从那里点链接过来"
             style={{ color: '#534AB7', textDecoration: 'underline', cursor: 'pointer' }}
