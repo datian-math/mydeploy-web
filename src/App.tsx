@@ -750,23 +750,30 @@ export default function App() {
         }
         data = allData
       } else {
-        // 普通模式排除 eq- 开头的题目
-        let query = supabase.from('math_questions').select('*').not('id', 'like', 'eq-%')
-        if (filterCategoryName) query = query.eq('category', filterCategoryName)
-        if (filterSubcategoryId) {
-          if (filterSubcategoryId.endsWith('%')) {
-            query = query.ilike('subcategory', filterSubcategoryId)
-          } else {
-            query = query.eq('subcategory', filterSubcategoryId)
+        // 普通模式排除 eq- 开头的题目（分批拉取，Supabase 单次上限 1000）
+        let allNormal: any[] = []
+        let nFrom = 0
+        while (true) {
+          let query = supabase.from('math_questions').select('*').not('id', 'like', 'eq-%')
+          if (filterCategoryName) query = query.eq('category', filterCategoryName)
+          if (filterSubcategoryId) {
+            if (filterSubcategoryId.endsWith('%')) {
+              query = query.ilike('subcategory', filterSubcategoryId)
+            } else {
+              query = query.eq('subcategory', filterSubcategoryId)
+            }
           }
+          if (filters.difficulty) query = query.eq('difficulty', filters.difficulty)
+          if (filters.type) query = query.eq('type', filters.type)
+          if (filters.search) query = query.ilike('content', `%${filters.search}%`)
+          query = query.order('created_at', { ascending: false }).range(nFrom, nFrom + 999)
+          const res = await query
+          if (res.error || !res.data || res.data.length === 0) break
+          allNormal = allNormal.concat(res.data)
+          if (res.data.length < 1000) break
+          nFrom += 1000
         }
-        if (filters.difficulty) query = query.eq('difficulty', filters.difficulty)
-        if (filters.type) query = query.eq('type', filters.type)
-        if (filters.search) query = query.ilike('content', `%${filters.search}%`)
-        query = query.order('created_at', { ascending: false })
-        const res = await query
-        if (res.error) { console.error('questions:', res.error); return }
-        data = res.data || []
+        data = allNormal
       }
 
       setQuestions(data.map(toFrontendQuestion))
