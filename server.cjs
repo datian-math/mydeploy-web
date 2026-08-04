@@ -2475,11 +2475,22 @@ if (fs.existsSync(XELATEX_PATH)) {
         const tarball = path.join(__dirname, 'tectonic.tar.gz');
         await new Promise((resolve, reject) => {
           const file = fs.createWriteStream(tarball);
-          https.get('https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-x86_64-unknown-linux-gnu.tar.gz', { headers: { 'User-Agent': 'node' } }, (res) => {
-            if (res.statusCode >= 400) { reject(new Error('HTTP ' + res.statusCode)); return; }
-            res.pipe(file);
-            file.on('finish', () => { file.close(); resolve(); });
-          }).on('error', (e) => { fs.unlinkSync(tarball); reject(e); });
+          const downloadUrl = 'https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-x86_64-unknown-linux-gnu.tar.gz';
+          const download = (url, redirectsLeft) => {
+            https.get(url, { headers: { 'User-Agent': 'node', 'Accept': '*/*' } }, (res) => {
+              // 跟随 302 重定向（GitHub 下载会跳转到 CDN）
+              if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 303) {
+                if (redirectsLeft <= 0 || !res.headers.location) { reject(new Error('Too many redirects')); return; }
+                res.resume();
+                download(res.headers.location, redirectsLeft - 1);
+                return;
+              }
+              if (res.statusCode >= 400) { reject(new Error('HTTP ' + res.statusCode)); return; }
+              res.pipe(file);
+              file.on('finish', () => { file.close(); resolve(); });
+            }).on('error', (e) => { fs.unlinkSync(tarball); reject(e); });
+          };
+          download(downloadUrl, 5);
         });
         const { execSync } = require('child_process');
         execSync(`tar xzf "${tarball}" -C "${__dirname}" tectonic && chmod +x "${tectonicPath}" && rm "${tarball}"`, { stdio: 'pipe', timeout: 30000 });
