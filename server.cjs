@@ -2455,6 +2455,7 @@ const XELATEX_CANDIDATES = [
 const TECTONIC_CANDIDATES = [
   '/usr/local/bin/tectonic',
   '/usr/bin/tectonic',
+  path.join(__dirname, 'tectonic'),
 ];
 const XELATEX_PATH = XELATEX_CANDIDATES.find(p => fs.existsSync(p)) || XELATEX_CANDIDATES[0];
 const TECTONIC_PATH = TECTONIC_CANDIDATES.find(p => fs.existsSync(p)) || TECTONIC_CANDIDATES[0];
@@ -2464,6 +2465,30 @@ if (fs.existsSync(XELATEX_PATH)) {
   console.log('[xelatex] 探测到路径:', XELATEX_PATH);
 } else if (USE_TECTONIC) {
   console.log('[tectonic] 探测到路径:', TECTONIC_PATH, '(轻量模式)');
+} else if (process.platform === 'linux') {
+  // Linux 环境（Railway等）自动下载 tectonic
+  const tectonicPath = path.join(__dirname, 'tectonic');
+  if (!fs.existsSync(tectonicPath)) {
+    console.log('[LaTeX] 正在下载 tectonic（轻量引擎，约20MB）...');
+    try {
+      const tarball = path.join(__dirname, 'tectonic.tar.gz');
+      await new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(tarball);
+        https.get('https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-x86_64-unknown-linux-gnu.tar.gz', (res) => {
+          if (res.statusCode !== 200 && res.statusCode !== 302) { reject(new Error('HTTP ' + res.statusCode)); return; }
+          res.pipe(file);
+          file.on('finish', () => { file.close(); resolve(); });
+        }).on('error', reject);
+      });
+      const { execSync } = require('child_process');
+      execSync(`tar xzf "${tarball}" -C "${__dirname}" tectonic && chmod +x "${tectonicPath}" && rm "${tarball}"`, { stdio: 'pipe', timeout: 30000 });
+      if (fs.existsSync(tectonicPath)) {
+        console.log('[tectonic] 自动安装成功:', tectonicPath);
+      }
+    } catch (e) {
+      console.warn('[LaTeX] tectonic 下载失败:', e.message);
+    }
+  }
 } else {
   console.warn('[LaTeX] 未找到 LaTeX 引擎，PDF 不可用，仅支持 ZIP 下载');
 }
