@@ -2466,19 +2466,28 @@ if (fs.existsSync(XELATEX_PATH)) {
 } else if (USE_TECTONIC) {
   console.log('[tectonic] 探测到路径:', TECTONIC_PATH, '(轻量模式)');
 } else if (process.platform === 'linux') {
-  // Linux 环境（Railway等）自动下载 tectonic
+  // Linux 环境（Railway等）自动下载 tectonic（用 Node.js https，避免依赖 curl/wget）
   const tectonicPath = path.join(__dirname, 'tectonic');
   if (!fs.existsSync(tectonicPath)) {
-    console.log('[LaTeX] 正在下载 tectonic（约20MB）...');
-    try {
-      const { execSync } = require('child_process');
-      execSync('curl -L https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-x86_64-unknown-linux-gnu.tar.gz -o /tmp/tectonic.tar.gz && tar xzf /tmp/tectonic.tar.gz -C ' + __dirname + ' tectonic && chmod +x ' + tectonicPath + ' && rm /tmp/tectonic.tar.gz', { stdio: 'pipe', timeout: 120000 });
-      if (fs.existsSync(tectonicPath)) {
-        console.log('[tectonic] 自动安装成功');
+    console.log('[LaTeX] 正在下载 tectonic（约20MB，使用Node.js下载）...');
+    (async () => {
+      try {
+        const tarball = path.join(__dirname, 'tectonic.tar.gz');
+        await new Promise((resolve, reject) => {
+          const file = fs.createWriteStream(tarball);
+          https.get('https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-x86_64-unknown-linux-gnu.tar.gz', { headers: { 'User-Agent': 'node' } }, (res) => {
+            if (res.statusCode >= 400) { reject(new Error('HTTP ' + res.statusCode)); return; }
+            res.pipe(file);
+            file.on('finish', () => { file.close(); resolve(); });
+          }).on('error', (e) => { fs.unlinkSync(tarball); reject(e); });
+        });
+        const { execSync } = require('child_process');
+        execSync(`tar xzf "${tarball}" -C "${__dirname}" tectonic && chmod +x "${tectonicPath}" && rm "${tarball}"`, { stdio: 'pipe', timeout: 30000 });
+        console.log('[tectonic] 自动安装成功:', tectonicPath);
+      } catch (e) {
+        console.warn('[LaTeX] tectonic 下载失败:', e.message);
       }
-    } catch (e) {
-      console.warn('[LaTeX] tectonic 下载失败:', e.message);
-    }
+    })();
   }
 } else {
   console.warn('[LaTeX] 未找到 LaTeX 引擎，PDF 不可用，仅支持 ZIP 下载');
