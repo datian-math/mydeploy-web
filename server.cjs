@@ -2469,21 +2469,12 @@ if (fs.existsSync(XELATEX_PATH)) {
   // Linux 环境（Railway等）自动下载 tectonic
   const tectonicPath = path.join(__dirname, 'tectonic');
   if (!fs.existsSync(tectonicPath)) {
-    console.log('[LaTeX] 正在下载 tectonic（轻量引擎，约20MB）...');
+    console.log('[LaTeX] 正在下载 tectonic（约20MB）...');
     try {
-      const tarball = path.join(__dirname, 'tectonic.tar.gz');
-      await new Promise((resolve, reject) => {
-        const file = fs.createWriteStream(tarball);
-        https.get('https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-x86_64-unknown-linux-gnu.tar.gz', (res) => {
-          if (res.statusCode !== 200 && res.statusCode !== 302) { reject(new Error('HTTP ' + res.statusCode)); return; }
-          res.pipe(file);
-          file.on('finish', () => { file.close(); resolve(); });
-        }).on('error', reject);
-      });
       const { execSync } = require('child_process');
-      execSync(`tar xzf "${tarball}" -C "${__dirname}" tectonic && chmod +x "${tectonicPath}" && rm "${tarball}"`, { stdio: 'pipe', timeout: 30000 });
+      execSync('curl -L https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.15.0/tectonic-0.15.0-x86_64-unknown-linux-gnu.tar.gz -o /tmp/tectonic.tar.gz && tar xzf /tmp/tectonic.tar.gz -C ' + __dirname + ' tectonic && chmod +x ' + tectonicPath + ' && rm /tmp/tectonic.tar.gz', { stdio: 'pipe', timeout: 120000 });
       if (fs.existsSync(tectonicPath)) {
-        console.log('[tectonic] 自动安装成功:', tectonicPath);
+        console.log('[tectonic] 自动安装成功');
       }
     } catch (e) {
       console.warn('[LaTeX] tectonic 下载失败:', e.message);
