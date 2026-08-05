@@ -30,6 +30,15 @@ export function toFrontendQuestion(q: Question) {
   const isGitHubPages = typeof window !== 'undefined' && window.location.hostname.includes('github.io')
   const imgBase = isGitHubPages ? '/mydeploy-web/exam-images/' : '/api/exam-images/'
   const fixImgPath = (s: string) => isGitHubPages ? s.replace(/\/api\/exam-images\//g, imgBase) : s
+  // 图片 URL 加时间戳参数，绕过 Cloudflare 缓存的错误 Content-Type
+  const cacheBust = (u: string) => u.includes('?') ? u + '&t=' + Date.now() : u + '?t=' + Date.now()
+  let images: Record<string, string> = {}
+  if (q.image) {
+    try {
+      const parsed = JSON.parse(q.image)
+      images = Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, cacheBust(String(v))]))
+    } catch { images = {} }
+  }
   return {
     id: q.id,
     title: '',
@@ -45,7 +54,7 @@ export function toFrontendQuestion(q: Question) {
     categoryName: q.category || '未分类',
     tags: Array.isArray(q.tags) ? q.tags : [],
     source: q.source || '',
-    images: q.image ? JSON.parse(q.image) : {} as Record<string, string>,
+    images,
     createdAt: q.created_at || '',
   }
 }
