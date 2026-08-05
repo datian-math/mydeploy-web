@@ -382,6 +382,9 @@ app.use('/uploads/images', express.static(IMAGES_DIR));
 // 高考题 SVG 图片：优先 public/exam-images（在 git 里，部署可用），其次 data/exam_images
 app.use('/api/exam-images', express.static(path.join(__dirname, 'public', 'exam-images')));
 app.use('/api/exam-images', express.static(path.join(DATA_DIR, 'exam_images')));
+// 题库（MathCycus）SVG 图片
+app.use('/api/bank-images', express.static(path.join(__dirname, 'public', 'bank-images')));
+app.use('/api/bank-images', express.static(path.join(DATA_DIR, 'bank_images')));
 
 // 图片上传配置
 const imageStorage = multer.diskStorage({

@@ -29,7 +29,9 @@ export function toFrontendQuestion(q: Question) {
   // 修复高考题图片路径：本地服务器用 /api/exam-images/，GitHub Pages 用绝对路径
   const isGitHubPages = typeof window !== 'undefined' && window.location.hostname.includes('github.io')
   const imgBase = isGitHubPages ? '/mydeploy-web/exam-images/' : '/api/exam-images/'
-  const fixImgPath = (s: string) => isGitHubPages ? s.replace(/\/api\/exam-images\//g, imgBase) : s
+  const fixImgPath = (s: string) => isGitHubPages
+    ? s.replace(/\/api\/exam-images\//g, imgBase).replace(/\/api\/bank-images\//g, '/mydeploy-web/bank-images/')
+    : s
   // 图片 URL 加时间戳参数，绕过 Cloudflare 缓存的错误 Content-Type
   const cacheBust = (u: string) => u.includes('?') ? u + '&t=' + Date.now() : u + '?t=' + Date.now()
   let images: Record<string, string> = {}
