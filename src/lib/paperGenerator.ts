@@ -179,6 +179,8 @@ function preprocessForPdf(latex: string, images: Record<string, string>): string
   text = text.replace(/\item\s*/g, '<br>&nbsp;&nbsp;• ')
   // 简单命令
   text = text.replace(/\\rule\{[^}]*\}\{[^}]*\}/g, '______')
+  // 转义美元符还原（\$ → $），让 MathJax 处理行内公式
+  text = text.replace(/\\\$/g, '$')
   return text
 }
 
@@ -244,9 +246,9 @@ export async function generatePdfClient(
       if (!answer && !analysis) return
       const div = document.createElement('div')
       div.style.cssText = 'margin-bottom:24px;page-break-inside:avoid;text-align:justify;'
-      let html = `<div style="margin-bottom:6px;"><b>${idx + 1}.</b></div>`
-      if (answer) html += `<div style="color:#2e7d32;"><b>答案：</b>${preprocessForPdf(answer, frontQ.images)}</div>`
-      if (analysis) html += `<div style="color:#444;margin-top:8px;padding-left:1em;border-left:3px solid #eee;"><b>解析：</b>${preprocessForPdf(analysis, frontQ.images)}</div>`
+      let html = `<div style="margin-bottom:8px;font-weight:700;font-size:15px;">第 ${idx + 1} 题</div>`
+      if (answer) html += `<div style="margin:6px 0;"><span style="color:#2e7d32;font-weight:700;">答案：</span>${preprocessForPdf(answer, frontQ.images)}</div>`
+      if (analysis) html += `<div style="margin-top:10px;padding-left:1em;border-left:3px solid #ddd;"><span style="font-weight:700;">解析：</span>${preprocessForPdf(analysis, frontQ.images)}</div>`
       div.innerHTML = html
       container.appendChild(div)
       blocks.push(div)
