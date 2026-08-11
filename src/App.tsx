@@ -876,20 +876,51 @@ export default function App() {
     setAiLoading(q.id)
     setAiPreviewQid(q.id)
     setAiPreviewContent('')
+    const buildPrompt = () => {
+      let prompt = '请解答以下高中数学题目，并给出详细的解题过程和解析。\n\n'
+      prompt += `题型：${q.type || '未知'}\n`
+      if (q.title) prompt += `标题：${q.title}\n`
+      prompt += `题目内容：\n${q.content}\n`
+      if (q.options && q.options.length > 0) {
+        prompt += `\n选项：\n`
+        const labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+        q.options.forEach((opt: string, i: number) => { prompt += `${labels[i]}. ${opt}\n` })
+      }
+      prompt += `\n要求（必须严格遵守）：\n1. 先独立解答题目，得出正确答案\n2. 解析风格参考高考标准答案：简洁、直接\n3. 简单计算步骤可以省略，只写关键步骤和最终结果\n4. 严禁使用行间公式，所有公式必须写成行内公式（\\(...\\)）\n5. 尽量减少文字叙述，直接写解题过程\n6. 如有多种解法，请一并列出\n7. 最后加一个"【方法总结】"段落\n8. 输出纯文本，不要使用 Markdown 代码块标记\n9. 直接输出解析内容，不要加"解析："等前缀`
+      return prompt
+    }
     try {
-      const res = await fetch(`${API}/api/ai-analysis`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: q.title,
-          content: q.content,
-          options: q.options || [],
-          type: q.type
+      // 先试服务器（本地/Railway 有代理）
+      let analysis = ''
+      try {
+        const res = await fetch(`${API}/api/ai-analysis`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: q.title, content: q.content, options: q.options || [], type: q.type })
         })
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || '请求失败')
-      setAiPreviewContent(data.analysis || '')
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || '请求失败')
+        analysis = data.analysis || ''
+      } catch {
+        // 服务器不可用：浏览器直接调 DeepSeek
+        const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer sk-f6b810fa8ced4f37bf9041c1140a8d5f' },
+          body: JSON.stringify({
+            model: 'deepseek-chat',
+            messages: [
+              { role: 'system', content: '你是位经验丰富的中国高中数学教师，擅长写高考标准答案风格的解析。公式全部用行内格式，不写分步骤序号，不重复题目条件，直接给出解题过程。' },
+              { role: 'user', content: buildPrompt() }
+            ],
+            temperature: 0.3,
+            max_tokens: 4000
+          })
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error?.message || '请求失败')
+        analysis = data.choices?.[0]?.message?.content || ''
+      }
+      setAiPreviewContent(analysis)
     } catch (err: any) {
       alert('AI 解析失败：' + (err.message || '未知错误'))
       setAiPreviewQid(null)
