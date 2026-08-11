@@ -1327,6 +1327,14 @@ export default function App() {
       const contentType = res.headers.get('content-type')
       if (contentType && contentType.includes('application/json')) {
         const data = await res.json()
+        // 服务器无 LaTeX 环境时降级为客户端生成
+        if (res.status === 503) {
+          const blob = await generatePdfClient(basket, '数学试卷', includeAnswer, includeAnalysis)
+          const url = URL.createObjectURL(blob)
+          setPreviewUrl(url)
+          setPreviewLoading(false)
+          return
+        }
         setPreviewLoading(false)
         return alert('预览失败：' + data.error)
       }
@@ -1335,8 +1343,16 @@ export default function App() {
       setPreviewUrl(url)
       setPreviewLoading(false)
     } catch (err) {
-      setPreviewLoading(false)
-      alert('预览失败')
+      // 服务器不可用：改用客户端生成 PDF 预览
+      try {
+        const blob = await generatePdfClient(basket, '数学试卷', includeAnswer, includeAnalysis)
+        const url = URL.createObjectURL(blob)
+        setPreviewUrl(url)
+        setPreviewLoading(false)
+      } catch (clientErr: any) {
+        setPreviewLoading(false)
+        alert('预览失败')
+      }
     }
   }
 
