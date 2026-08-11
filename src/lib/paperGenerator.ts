@@ -216,7 +216,7 @@ export async function generatePdfClient(
   h.innerHTML = `<h2 style="margin:0;font-size:22px;font-weight:700;">${title || '数学试卷'}</h2><p style="color:#333;margin:8px 0 0;font-size:13px;">（考试时间：120分钟&nbsp;&nbsp;满分：150分）</p><p style="margin:16px 0 0;font-size:13px;">姓名：____________&nbsp;&nbsp;&nbsp;得分：____________</p>`
   container.appendChild(h)
 
-  // 题目 + 答案块
+  // 题目块（答案版：题目在前）
   const blocks: HTMLDivElement[] = []
   blocks.push(h)
   questions.forEach((q, idx) => {
@@ -224,15 +224,34 @@ export async function generatePdfClient(
     const div = document.createElement('div')
     div.style.cssText = 'margin-bottom:28px;page-break-inside:avoid;text-align:justify;'
     const qhtml = preprocessForPdf(frontQ.content, frontQ.images)
-    const answer = frontQ.answer || ''
-    const analysis = frontQ.analysis || ''
     const qType = frontQ.type || ''
     div.innerHTML = `<div style="margin-bottom:10px;"><span style="font-weight:700;">${idx + 1}.</span> <span style="color:#666;font-size:12px;">（${qType}）</span> ${qhtml}</div>`
-    if (includeAnswer && answer) div.innerHTML += `<div style="color:#2e7d32;margin-top:6px;"><b>答案：</b>${answer}</div>`
-    if (includeAnalysis && analysis) div.innerHTML += `<div style="color:#444;margin-top:8px;padding-left:1em;border-left:3px solid #eee;"><b>解析：</b>${analysis}</div>`
     container.appendChild(div)
     blocks.push(div)
   })
+
+  // 答案块：集中在后，强制分页
+  if (includeAnswer || includeAnalysis) {
+    const ansHeader = document.createElement('div')
+    ansHeader.style.cssText = 'text-align:center;margin:40px 0 24px;page-break-before:always;'
+    ansHeader.innerHTML = `<h2 style="margin:0;font-size:20px;font-weight:700;">参考答案</h2>`
+    container.appendChild(ansHeader)
+    blocks.push(ansHeader)
+    questions.forEach((q, idx) => {
+      const frontQ = toFrontendQuestion(q)
+      const answer = frontQ.answer || ''
+      const analysis = frontQ.analysis || ''
+      if (!answer && !analysis) return
+      const div = document.createElement('div')
+      div.style.cssText = 'margin-bottom:24px;page-break-inside:avoid;text-align:justify;'
+      let html = `<div style="margin-bottom:6px;"><b>${idx + 1}.</b></div>`
+      if (answer) html += `<div style="color:#2e7d32;"><b>答案：</b>${preprocessForPdf(answer, frontQ.images)}</div>`
+      if (analysis) html += `<div style="color:#444;margin-top:8px;padding-left:1em;border-left:3px solid #eee;"><b>解析：</b>${preprocessForPdf(analysis, frontQ.images)}</div>`
+      div.innerHTML = html
+      container.appendChild(div)
+      blocks.push(div)
+    })
+  }
 
   // MathJax 输出样式：显示公式独立成行居中，行内公式垂直对齐
   const style = document.createElement('style')
@@ -273,7 +292,9 @@ export async function generatePdfClient(
     const canvas = await html2canvas(block, { scale: 2, backgroundColor: '#ffffff' })
     const imgW = pageW - margin * 2
     const imgH = (canvas.height * imgW) / canvas.width
-    if (y + imgH > pageH - margin) {
+    // 强制分页：答案区标记（page-break-before:always）
+    const forceBreak = block.style.pageBreakBefore === 'always'
+    if (forceBreak || y + imgH > pageH - margin) {
       pdf.addPage()
       y = margin
     }

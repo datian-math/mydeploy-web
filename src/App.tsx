@@ -6,7 +6,6 @@ import { useAuth } from './lib/auth'
 import { supabase } from './lib/supabase'
 import { fetchBasket as supabaseFetchBasket, addToBasket as supabaseAddToBasket, removeFromBasket as supabaseRemoveFromBasket, clearBasket as supabaseClearBasket, fetchQuestions as supabaseFetchQuestions, fetchCategories as supabaseFetchCategories, createQuestion as supabaseCreateQuestion, updateQuestion as supabaseUpdateQuestion, deleteQuestion as supabaseDeleteQuestion, toFrontendQuestion, toSupabaseQuestion } from './lib/db'
 import { generatePaperClient, generatePdfClient } from './lib/paperGenerator'
-const ExamComposer = React.lazy(() => import('./composer/ExamComposer'))
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
@@ -1566,8 +1565,7 @@ export default function App() {
             {[
               { key: 'bank', label: '试题库' },
               ...(isGaokao ? [{ key: 'exam-papers', label: '📑 真题PDF套卷' }] : []),
-              { key: 'basket', label: `旧版组卷 (${basket.length})` },
-              { key: 'composer', label: '✨ 新版组卷' },
+              { key: 'basket', label: `组卷 (${basket.length})` },
               { key: 'about', label: '关于' },
               { key: 'resources', label: '资源工具' }
             ].map(tab => (
@@ -2662,61 +2660,27 @@ export default function App() {
           <div style={{ maxWidth: 1000, margin: '0 auto' }}>
             <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 24 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, gap: 16 }}>
-                <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, whiteSpace: 'nowrap' }}>旧版组卷</h2>
+                <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, whiteSpace: 'nowrap' }}>组卷</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-end' }}>
-                  {/* 第一行：预览按钮 */}
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => handlePreviewPDF(false, false)}
-                      style={{
-                        padding: '8px 16px',
-                        borderRadius: 8,
-                        border: '0.5px solid #1976d2',
-                        background: '#e3f2fd',
-                        color: '#1976d2',
-                        fontSize: 13,
-                        fontWeight: 500,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      🔍 预览 PDF（学生版）
-                    </button>
-                  </div>
-                  {/* 第二行：导出选项 */}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
-                    <button onClick={handleClearBasket} style={{ padding: '8px 16px', borderRadius: 8, border: '0.5px solid #fcc', background: '#fee', color: '#c33', fontSize: 13, cursor: 'pointer' }}>
-                      清空旧版组卷
-                    </button>
-                    <span style={{ color: '#ccc', fontSize: 13 }}>|</span>
-                    <button onClick={() => handleGeneratePaper(false, false, 'pdf')} style={{ padding: '8px 16px', borderRadius: 8, border: '0.5px solid #534AB7', background: '#fff', color: '#534AB7', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-                      📄 学生版 PDF
-                    </button>
                     <button onClick={() => handleGeneratePaper(true, true, 'pdf')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#2e7d32', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-                      📄 教师版+解析 PDF
+                      📄 PDF答案版下载
                     </button>
-                    <span style={{ color: '#ccc', fontSize: 13 }}>|</span>
-                    <button onClick={() => handleGeneratePaper(false, false, 'zip')} style={{ padding: '8px 16px', borderRadius: 8, border: '0.5px solid #f57c00', background: '#fff3e0', color: '#f57c00', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-                      📦 学生版 LaTeX
+                    <button onClick={() => handleGeneratePaper(true, true, 'zip')} style={{ padding: '8px 16px', borderRadius: 8, border: '0.5px solid #f57c00', background: '#fff3e0', color: '#f57c00', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                      📦 LaTeX源码下载
                     </button>
-                    <button onClick={() => handleGeneratePaper(true, true, 'zip')} style={{ padding: '8px 16px', borderRadius: 8, border: '0.5px solid #2e7d32', background: '#e8f5e9', color: '#2e7d32', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-                      📦 教师版+解析 LaTeX
-                    </button>
-                    <span style={{ color: '#ccc', fontSize: 13 }}>|</span>
-                    <button onClick={() => handleGeneratePaper(true, true, 'pdf', 'a4')} style={{ padding: '8px 16px', borderRadius: 8, border: '0.5px solid #534AB7', background: '#EEEDFE', color: '#534AB7', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-                      📄 A4教师版PDF
-                    </button>
-                    <button onClick={() => handleGeneratePaper(true, true, 'zip', 'a4')} style={{ padding: '8px 16px', borderRadius: 8, border: '0.5px solid #534AB7', background: '#EEEDFE', color: '#534AB7', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-                      📦 A4教师版LaTeX
+                    <button onClick={handleClearBasket} style={{ padding: '8px 16px', borderRadius: 8, border: '0.5px solid #fcc', background: '#fee', color: '#c33', fontSize: 13, cursor: 'pointer' }}>
+                      清空
                     </button>
                   </div>
-                  <div style={{ fontSize: 12, color: '#999' }}>预览 ≈ 5-10秒 · PDF导出 ≈ 5-10秒 · LaTeX导出 ≈ 即时</div>
+                  <div style={{ fontSize: 12, color: '#999' }}>PDF ≈ 5-10秒 · LaTeX ≈ 即时</div>
                 </div>
               </div>
 
               {basketQuestions.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 60, color: '#999' }}>
                   <div style={{ fontSize: 48, marginBottom: 16 }}>🧺</div>
-                  <div>旧版组卷为空，去试题库添加题目吧</div>
+                  <div>组卷为空，去试题库添加题目吧</div>
                 </div>
               ) : (
                 basketQuestions.map((q, index) => (
@@ -2744,21 +2708,6 @@ export default function App() {
               )}
             </div>
           </div>
-        )}
-
-        {/* ========== 新版组卷页面 ========== */}
-        {activeTab === 'composer' && (
-          <React.Suspense fallback={<div style={{padding:40,textAlign:'center',color:'#666'}}>加载新版组卷中...</div>}>
-            <ErrorBoundary fallback={<div style={{padding:40,color:'#c00'}}>新版组卷加载失败，请刷新页面重试。如持续失败可先用旧版组卷。</div>}>
-              <ExamComposer
-                questions={questions}
-                basketIds={basket}
-                onBasketChange={setBasket}
-                onClearBasket={handleClearBasket}
-                apiBase={API}
-              />
-            </ErrorBoundary>
-          </React.Suspense>
         )}
 
         {/* ========== 已下载的试卷页面 ========== */}
