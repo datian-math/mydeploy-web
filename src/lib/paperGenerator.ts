@@ -202,12 +202,12 @@ export async function generatePdfClient(
   const typeOrder: Record<string, number> = { '单选': 1, '多选': 2, '填空': 3, '解答': 4 }
   questions.sort((a, b) => (typeOrder[a.type] || 99) - (typeOrder[b.type] || 99))
 
-  // 2. 构建隐藏渲染容器
+  // 2. 构建隐藏渲染容器（须在可视区内，html2canvas 无法截取离屏元素）
   const container = document.createElement('div')
-  container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:#fff;padding:40px;z-index:-1;'
+  container.style.cssText = 'position:fixed;left:0;top:0;width:794px;background:#fff;padding:40px;opacity:0;pointer-events:none;z-index:-9999;'
   document.body.appendChild(container)
 
-  // 标题
+  // 标题（作为第一个块）
   const h = document.createElement('div')
   h.style.cssText = 'text-align:center;margin-bottom:20px;'
   h.innerHTML = `<h2 style="margin:0;">${title || '数学试卷'}</h2><p style="color:#666;margin:4px 0;">（考试时间：120分钟 满分：150分）</p>`
@@ -215,6 +215,7 @@ export async function generatePdfClient(
 
   // 题目 + 答案块
   const blocks: HTMLDivElement[] = []
+  blocks.push(h)
   questions.forEach((q, idx) => {
     const frontQ = toFrontendQuestion(q)
     const div = document.createElement('div')
@@ -229,10 +230,18 @@ export async function generatePdfClient(
     blocks.push(div)
   })
 
-  // 3. 等待 MathJax 渲染
+  // 3. 等待 MathJax 渲染（先确保 MathJax 已加载）
   try {
     if (window.MathJax?.typesetPromise) {
       await window.MathJax.typesetPromise([container])
+    } else {
+      // MathJax 未加载完成，等待
+      for (let i = 0; i < 50 && !window.MathJax?.typesetPromise; i++) {
+        await new Promise(r => setTimeout(r, 200))
+      }
+      if (window.MathJax?.typesetPromise) {
+        await window.MathJax.typesetPromise([container])
+      }
     }
   } catch (e) { console.error('MathJax typeset:', e) }
 
@@ -240,8 +249,6 @@ export async function generatePdfClient(
   const pdf = new jsPDF('p', 'mm', 'a4')
   const pageW = 210, pageH = 297, margin = 10
   let y = margin
-  const titleH = 25 // 标题占位
-  y += titleH
 
   for (const block of blocks) {
     const canvas = await html2canvas(block, { scale: 2, backgroundColor: '#ffffff' })
