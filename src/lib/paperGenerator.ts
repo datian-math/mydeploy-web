@@ -234,6 +234,15 @@ export async function generatePdfClient(
     blocks.push(div)
   })
 
+  // MathJax 输出样式：显示公式独立成行居中，行内公式垂直对齐
+  const style = document.createElement('style')
+  style.textContent = `
+    mjx-container[display="true"] { display:block !important; text-align:center; margin:10px 0 !important; }
+    mjx-container { font-size:1.02em; }
+    table { max-width:100%; }
+  `
+  container.appendChild(style)
+
   // 3. 等待 MathJax 渲染（先确保 MathJax 已加载）
   try {
     if (window.MathJax?.typesetPromise) {
@@ -247,6 +256,12 @@ export async function generatePdfClient(
         await window.MathJax.typesetPromise([container])
       }
     }
+    // 清理未渲染的 $ 残留
+    container.querySelectorAll('div, p, span, td').forEach(el => {
+      if (el.children.length === 0 && el.textContent?.includes('$')) {
+        el.textContent = el.textContent.replace(/\$/g, '')
+      }
+    })
   } catch (e) { console.error('MathJax typeset:', e) }
 
   // 4. html2canvas 逐块截图 → jsPDF
