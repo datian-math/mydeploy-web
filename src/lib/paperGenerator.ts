@@ -161,47 +161,24 @@ export async function generatePaperClient(
 
 // ===== 客户端 PDF 生成（GitHub Pages 无服务器时用浏览器渲染）=====
 
-// 简化预处理：清理 LaTeX 环境，转换图片引用，保留数学定界符
+// 简化预处理：只做安全清理，保留数学定界符和 LaTeX 环境给 MathJax 渲染
 function preprocessForPdf(latex: string, images: Record<string, string>): string {
   if (!latex) return ''
   let text = latex
-  // 清理容器环境
+  // 只清理 MathJax 无法处理或会破坏 $$ 块的容器环境
   text = text.replace(/\begin\{minipage\}(\[[^\]]*\])?\{[^}]*\}/g, '')
   text = text.replace(/\end\{minipage\}/g, '')
   text = text.replace(/\begin\{center\}/g, '').replace(/\end\{center\}/g, '')
-  text = text.replace(/\begin\{enumerate\}/g, '').replace(/\end\{enumerate\}/g, '')
-  text = text.replace(/\begin\{itemize\}/g, '').replace(/\end\{itemize\}/g, '')
-  // tabular → HTML 表格（真正的表格样式）
-  text = text.replace(/\begin\{tabular\}(\[[^\]]*\])?\{([^}]*)\}[\s\S]*?\end\{tabular\}/g, (m) => {
-    const rows = m.replace(/\begin\{tabular\}(\[[^\]]*\])?\{[^}]*\}/g, '').replace(/\end\{tabular\}/g, '').split(/\\/).filter(r => r.trim())
-    const html = rows.map(row => {
-      const cells = row.split('&').map(c => c.replace(/\hline/g, '').trim())
-      return '<tr>' + cells.map(c => `<td style="padding:4px 10px;border:1px solid #333;text-align:center;">${c}</td>`).join('') + '</tr>'
-    }).join('')
-    return `<table style="border-collapse:collapse;margin:8px auto;">${html}</table>`
-  })
-  // array 在 $$ $$ 内由 MathJax 渲染，无需处理；单独的 array 转表格
-  text = text.replace(/\begin\{array\}(\[[^\]]*\])?\{([^}]*)\}[\s\S]*?\end\{array\}/g, (m) => {
-    const rows = m.replace(/\begin\{array\}(\[[^\]]*\])?\{[^}]*\}/g, '').replace(/\end\{array\}/g, '').split(/\\/).filter(r => r.trim())
-    const html = rows.map(row => {
-      const cells = row.split('&').map(c => c.replace(/\hline/g, '').trim())
-      return '<tr>' + cells.map(c => `<td style="padding:4px 10px;border:1px solid #333;text-align:center;">${c}</td>`).join('') + '</tr>'
-    }).join('')
-    return `<table style="border-collapse:collapse;margin:8px auto;">${html}</table>`
-  })
+  text = text.replace(/\\centering/g, '')
   // 转换 \img{key} 为 <img>
   text = text.replace(/\img[\{\[]\s*([^\}\]\s]+)\s*[\}\]]?/g, (_, key) => {
     const url = images[key] || ''
     return url ? `<img src="${url}" style="max-width:280px;display:block;margin:8px auto;">` : ''
   })
-  // 转换 \item 为编号行
-  let itemIdx = 0
-  text = text.replace(/\item\s*/g, () => { itemIdx++; return `<br><span style="margin-left:2em;">${'(' + itemIdx + ')'} </span>` })
-  // 清理杂项命令
-  text = text.replace(/\\centering/g, '')
-  text = text.replace(/\\,|\\;|\\quad|\\qquad/g, ' ')
-  text = text.replace(/\\underline\{([^}]*)\}/g, '<u>$1</u>')
-  text = text.replace(/\\rule\{[^}]*\}\{[^}]*\}/g, '____')
+  // \item 在 MathJax 外才转换（选择题选项）
+  text = text.replace(/\item\s*/g, '<br>&nbsp;&nbsp;• ')
+  // 简单命令
+  text = text.replace(/\\rule\{[^}]*\}\{[^}]*\}/g, '______')
   return text
 }
 
@@ -225,9 +202,12 @@ export async function generatePdfClient(
   const typeOrder: Record<string, number> = { '单选': 1, '多选': 2, '填空': 3, '解答': 4 }
   questions.sort((a, b) => (typeOrder[a.type] || 99) - (typeOrder[b.type] || 99))
 
-  // 2. 构建隐藏渲染容器（须在可视区内，html2canvas 无法截取离屏元素）
+  // 2. 构建渲染容器：必须可见 MathJax 才会渲染；用白色遮罩盖住避免用户看到
+  const overlay = document.createElement('div')
+  overlay.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:99998;'
+  document.body.appendChild(overlay)
   const container = document.createElement('div')
-  container.style.cssText = 'position:fixed;left:0;top:0;width:794px;background:#fff;padding:48px 56px;opacity:0;pointer-events:none;z-index:-9999;font-family:"Noto Sans SC","SimSun","宋体",serif;font-size:15px;line-height:1.9;color:#000;'
+  container.style.cssText = 'position:fixed;left:0;top:0;width:794px;background:#fff;padding:48px 56px;z-index:99999;font-family:"Noto Sans SC","SimSun","宋体",serif;font-size:15px;line-height:1.9;color:#000;'
   document.body.appendChild(container)
 
   // 标题（作为第一个块）
@@ -287,5 +267,6 @@ export async function generatePdfClient(
   }
 
   container.remove()
+  overlay.remove()
   return pdf.output('blob')
 }
