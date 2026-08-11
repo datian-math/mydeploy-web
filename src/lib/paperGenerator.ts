@@ -171,14 +171,37 @@ function preprocessForPdf(latex: string, images: Record<string, string>): string
   text = text.replace(/\begin\{center\}/g, '').replace(/\end\{center\}/g, '')
   text = text.replace(/\begin\{enumerate\}/g, '').replace(/\end\{enumerate\}/g, '')
   text = text.replace(/\begin\{itemize\}/g, '').replace(/\end\{itemize\}/g, '')
-  text = text.replace(/\begin\{tabular\}[\s\S]*?\end\{tabular\}/g, (m) => m.replace(/\hline/g, '').replace(/\\/g, ' | ').replace(/&/g, ' | '))
+  // tabular → HTML 表格（真正的表格样式）
+  text = text.replace(/\begin\{tabular\}(\[[^\]]*\])?\{([^}]*)\}[\s\S]*?\end\{tabular\}/g, (m) => {
+    const rows = m.replace(/\begin\{tabular\}(\[[^\]]*\])?\{[^}]*\}/g, '').replace(/\end\{tabular\}/g, '').split(/\\/).filter(r => r.trim())
+    const html = rows.map(row => {
+      const cells = row.split('&').map(c => c.replace(/\hline/g, '').trim())
+      return '<tr>' + cells.map(c => `<td style="padding:4px 10px;border:1px solid #333;text-align:center;">${c}</td>`).join('') + '</tr>'
+    }).join('')
+    return `<table style="border-collapse:collapse;margin:8px auto;">${html}</table>`
+  })
+  // array 在 $$ $$ 内由 MathJax 渲染，无需处理；单独的 array 转表格
+  text = text.replace(/\begin\{array\}(\[[^\]]*\])?\{([^}]*)\}[\s\S]*?\end\{array\}/g, (m) => {
+    const rows = m.replace(/\begin\{array\}(\[[^\]]*\])?\{[^}]*\}/g, '').replace(/\end\{array\}/g, '').split(/\\/).filter(r => r.trim())
+    const html = rows.map(row => {
+      const cells = row.split('&').map(c => c.replace(/\hline/g, '').trim())
+      return '<tr>' + cells.map(c => `<td style="padding:4px 10px;border:1px solid #333;text-align:center;">${c}</td>`).join('') + '</tr>'
+    }).join('')
+    return `<table style="border-collapse:collapse;margin:8px auto;">${html}</table>`
+  })
   // 转换 \img{key} 为 <img>
   text = text.replace(/\img[\{\[]\s*([^\}\]\s]+)\s*[\}\]]?/g, (_, key) => {
     const url = images[key] || ''
     return url ? `<img src="${url}" style="max-width:280px;display:block;margin:8px auto;">` : ''
   })
-  // 转换 \item 为换行
-  text = text.replace(/\item\s*/g, '<br>• ')
+  // 转换 \item 为编号行
+  let itemIdx = 0
+  text = text.replace(/\item\s*/g, () => { itemIdx++; return `<br><span style="margin-left:2em;">${'(' + itemIdx + ')'} </span>` })
+  // 清理杂项命令
+  text = text.replace(/\\centering/g, '')
+  text = text.replace(/\\,|\\;|\\quad|\\qquad/g, ' ')
+  text = text.replace(/\\underline\{([^}]*)\}/g, '<u>$1</u>')
+  text = text.replace(/\\rule\{[^}]*\}\{[^}]*\}/g, '____')
   return text
 }
 
@@ -204,13 +227,13 @@ export async function generatePdfClient(
 
   // 2. 构建隐藏渲染容器（须在可视区内，html2canvas 无法截取离屏元素）
   const container = document.createElement('div')
-  container.style.cssText = 'position:fixed;left:0;top:0;width:794px;background:#fff;padding:40px;opacity:0;pointer-events:none;z-index:-9999;'
+  container.style.cssText = 'position:fixed;left:0;top:0;width:794px;background:#fff;padding:48px 56px;opacity:0;pointer-events:none;z-index:-9999;font-family:"Noto Sans SC","SimSun","宋体",serif;font-size:15px;line-height:1.9;color:#000;'
   document.body.appendChild(container)
 
   // 标题（作为第一个块）
   const h = document.createElement('div')
-  h.style.cssText = 'text-align:center;margin-bottom:20px;'
-  h.innerHTML = `<h2 style="margin:0;">${title || '数学试卷'}</h2><p style="color:#666;margin:4px 0;">（考试时间：120分钟 满分：150分）</p>`
+  h.style.cssText = 'text-align:center;margin-bottom:24px;'
+  h.innerHTML = `<h2 style="margin:0;font-size:22px;font-weight:700;">${title || '数学试卷'}</h2><p style="color:#333;margin:8px 0 0;font-size:13px;">（考试时间：120分钟&nbsp;&nbsp;满分：150分）</p><p style="margin:16px 0 0;font-size:13px;">姓名：____________&nbsp;&nbsp;&nbsp;得分：____________</p>`
   container.appendChild(h)
 
   // 题目 + 答案块
@@ -219,13 +242,14 @@ export async function generatePdfClient(
   questions.forEach((q, idx) => {
     const frontQ = toFrontendQuestion(q)
     const div = document.createElement('div')
-    div.style.cssText = 'margin-bottom:24px;page-break-inside:avoid;'
+    div.style.cssText = 'margin-bottom:28px;page-break-inside:avoid;text-align:justify;'
     const qhtml = preprocessForPdf(frontQ.content, frontQ.images)
     const answer = frontQ.answer || ''
     const analysis = frontQ.analysis || ''
-    div.innerHTML = `<div style="margin-bottom:8px;"><b>${idx + 1}.</b> ${qhtml}</div>`
-    if (includeAnswer && answer) div.innerHTML += `<div style="color:#2e7d32;"><b>答案：</b>${answer}</div>`
-    if (includeAnalysis && analysis) div.innerHTML += `<div style="color:#555;margin-top:4px;"><b>解析：</b>${analysis}</div>`
+    const qType = frontQ.type || ''
+    div.innerHTML = `<div style="margin-bottom:10px;"><span style="font-weight:700;">${idx + 1}.</span> <span style="color:#666;font-size:12px;">（${qType}）</span> ${qhtml}</div>`
+    if (includeAnswer && answer) div.innerHTML += `<div style="color:#2e7d32;margin-top:6px;"><b>答案：</b>${answer}</div>`
+    if (includeAnalysis && analysis) div.innerHTML += `<div style="color:#444;margin-top:8px;padding-left:1em;border-left:3px solid #eee;"><b>解析：</b>${analysis}</div>`
     container.appendChild(div)
     blocks.push(div)
   })
