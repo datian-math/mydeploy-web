@@ -209,7 +209,7 @@ export async function generatePdfClient(
   overlay.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:99998;'
   document.body.appendChild(overlay)
   const container = document.createElement('div')
-  container.style.cssText = 'position:fixed;left:0;top:0;width:794px;background:#fff;padding:48px 56px;z-index:99999;font-family:"Noto Sans SC","SimSun","宋体",serif;font-size:15px;line-height:1.9;color:#000;'
+  container.style.cssText = 'position:fixed;left:0;top:0;width:794px;background:#fff;padding:40px 48px;z-index:99999;font-family:"Noto Sans SC","SimSun","宋体",serif;font-size:14px;line-height:1.5;color:#000;'
   document.body.appendChild(container)
 
   // 标题（作为第一个块）
@@ -224,7 +224,7 @@ export async function generatePdfClient(
   questions.forEach((q, idx) => {
     const frontQ = toFrontendQuestion(q)
     const div = document.createElement('div')
-    div.style.cssText = 'margin-bottom:28px;page-break-inside:avoid;text-align:justify;'
+    div.style.cssText = 'margin-bottom:20px;page-break-inside:avoid;text-align:left;'
     const qhtml = preprocessForPdf(frontQ.content, frontQ.images)
     const qType = frontQ.type || ''
     div.innerHTML = `<div style="margin-bottom:10px;"><span style="font-weight:700;">${idx + 1}.</span> <span style="color:#666;font-size:12px;">（${qType}）</span> ${qhtml}</div>`
@@ -245,7 +245,7 @@ export async function generatePdfClient(
       const analysis = frontQ.analysis || ''
       if (!answer && !analysis) return
       const div = document.createElement('div')
-      div.style.cssText = 'margin-bottom:24px;page-break-inside:avoid;text-align:justify;'
+      div.style.cssText = 'margin-bottom:18px;page-break-inside:avoid;text-align:left;'
       let html = `<div style="margin-bottom:8px;font-weight:700;font-size:15px;">第 ${idx + 1} 题</div>`
       if (answer) html += `<div style="margin:6px 0;"><span style="color:#2e7d32;font-weight:700;">答案：</span>${preprocessForPdf(answer, frontQ.images)}</div>`
       if (analysis) html += `<div style="margin-top:10px;padding-left:1em;border-left:3px solid #ddd;"><span style="font-weight:700;">解析：</span>${preprocessForPdf(analysis, frontQ.images)}</div>`
