@@ -1647,8 +1647,19 @@ app.post('/api/preview-latex', async (req, res) => {
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-1e53840ff7c54f29bc0fff25bf8f028a';
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 
+// 服务器端 AI 解析每日限额（简单内存计数）
+const aiDailyUsage = { date: '', count: 0 };
+const AI_DAILY_LIMIT = 50;
+
 app.post('/api/ai-analysis', async (req, res) => {
   try {
+    // 每日限额检查
+    const today = new Date().toISOString().slice(0, 10);
+    if (aiDailyUsage.date !== today) { aiDailyUsage.date = today; aiDailyUsage.count = 0; }
+    if (aiDailyUsage.count >= AI_DAILY_LIMIT) {
+      return res.status(429).json({ error: `今日 AI 解析已达上限（${AI_DAILY_LIMIT} 次）` });
+    }
+
     const { title, content, options, type } = req.body;
 
     if (!content) {
@@ -1680,7 +1691,7 @@ app.post('/api/ai-analysis', async (req, res) => {
 9. 直接输出解析内容，不要加"解析："等前缀`;
 
     const requestBody = {
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       messages: [
         { role: 'system', content: '你是位经验丰富的中国高中数学教师，擅长写高考标准答案风格的解析。你的特点是：公式全部用行内格式，不写分步骤序号，不重复题目条件，直接给出解题过程。' },
         { role: 'user', content: prompt }
@@ -1705,6 +1716,7 @@ app.post('/api/ai-analysis', async (req, res) => {
     }
 
     const data = await response.json();
+    aiDailyUsage.count++;
     const aiAnalysis = data.choices?.[0]?.message?.content?.trim() || '';
 
     if (!aiAnalysis) {
@@ -1760,7 +1772,7 @@ ${rawContent}
         'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         messages: [
           { role: 'system', content: '你是数学题目结构化解析专家。只输出JSON，不输出任何其他内容。' },
           { role: 'user', content: prompt }

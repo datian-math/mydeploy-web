@@ -872,7 +872,30 @@ export default function App() {
   }
 
   // AI 解析：调用后端接口生成解析，然后展示预览对比
+  // 每日 AI 解析次数限制（防止误触/滥用消耗 API 费用）
+  const DAILY_AI_LIMIT = 20
+  const getAiUsageCount = () => {
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const data = JSON.parse(localStorage.getItem('ai_usage_count') || '{}')
+      return data.date === today ? data.count : 0
+    } catch { return 0 }
+  }
+  const recordAiUsage = () => {
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const data = JSON.parse(localStorage.getItem('ai_usage_count') || '{}')
+      data.date = today
+      data.count = (data.date === today ? data.count : 0) + 1
+      localStorage.setItem('ai_usage_count', JSON.stringify(data))
+    } catch { /* ignore */ }
+  }
+
   const handleAiAnalysis = async (q: any) => {
+    if (getAiUsageCount() >= DAILY_AI_LIMIT) {
+      alert(`今日 AI 解析次数已达上限（${DAILY_AI_LIMIT} 次），明天再试`)
+      return
+    }
     setAiLoading(q.id)
     setAiPreviewQid(q.id)
     setAiPreviewContent('')
@@ -907,7 +930,7 @@ export default function App() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer sk-1e53840ff7c54f29bc0fff25bf8f028a' },
           body: JSON.stringify({
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
             messages: [
               { role: 'system', content: '你是位经验丰富的中国高中数学教师，擅长写高考标准答案风格的解析。公式全部用行内格式，不写分步骤序号，不重复题目条件，直接给出解题过程。' },
               { role: 'user', content: buildPrompt() }
@@ -921,6 +944,7 @@ export default function App() {
         analysis = data.choices?.[0]?.message?.content || ''
       }
       setAiPreviewContent(analysis)
+      recordAiUsage()
     } catch (err: any) {
       alert('AI 解析失败：' + (err.message || '未知错误'))
       setAiPreviewQid(null)
