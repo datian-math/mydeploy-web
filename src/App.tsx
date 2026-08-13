@@ -1819,21 +1819,23 @@ export default function App() {
                               {showAnswerIds.has(q.id) ? '隐藏答案' : '显示答案'}
                             </button>
                           )}
-                          <button
-                            onClick={() => handleAiAnalysis(q)}
-                            disabled={aiLoading === q.id}
-                            style={{
-                              fontSize: 12,
-                              padding: '4px 12px',
-                              borderRadius: 4,
-                              border: '0.5px solid #f57c00',
-                              background: aiLoading === q.id ? '#fff3e0' : '#fff',
-                              color: '#f57c00',
-                              cursor: aiLoading === q.id ? 'not-allowed' : 'pointer'
-                            }}
-                          >
-                            {aiLoading === q.id ? 'AI 生成中...' : 'AI 解析'}
-                          </button>
+                          {isAdmin && (
+                            <button
+                              onClick={() => handleAiAnalysis(q)}
+                              disabled={aiLoading === q.id}
+                              style={{
+                                fontSize: 12,
+                                padding: '4px 12px',
+                                borderRadius: 4,
+                                border: '0.5px solid #f57c00',
+                                background: aiLoading === q.id ? '#fff3e0' : '#fff',
+                                color: '#f57c00',
+                                cursor: aiLoading === q.id ? 'not-allowed' : 'pointer'
+                              }}
+                            >
+                              {aiLoading === q.id ? 'AI 生成中...' : 'AI 解析'}
+                            </button>
+                          )}
                           <button
                             onClick={() => basket.includes(q.id) ? removeFromBasket(q.id) : addToBasket(q.id)}
                             style={{
