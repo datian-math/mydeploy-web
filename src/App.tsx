@@ -905,7 +905,7 @@ export default function App() {
         // 服务器不可用：浏览器直接调 DeepSeek
         const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer sk-f6b810fa8ced4f37bf9041c1140a8d5f' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer sk-1e53840ff7c54f29bc0fff25bf8f028a' },
           body: JSON.stringify({
             model: 'deepseek-chat',
             messages: [

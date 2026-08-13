@@ -1644,7 +1644,7 @@ app.post('/api/preview-latex', async (req, res) => {
 
 // ========== AI 解析 API ==========
 // 调用 DeepSeek API 生成题目解析
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-1e53840ff7c54f29bc0fff25bf8f028a';
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 
 app.post('/api/ai-analysis', async (req, res) => {
