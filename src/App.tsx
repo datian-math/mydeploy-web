@@ -533,7 +533,7 @@ export default function App() {
   const { user, signOut, isAdmin } = useAuth()
 
   // 页面状态
-  const [activeTab, setActiveTab] = useState<'bank' | 'editor' | 'basket' | 'composer' | 'import' | 'papers' | 'about' | 'pdf-batch' | 'exam-papers' | 'resources' | 'login-logs'>('bank')
+  const [activeTab, setActiveTab] = useState<'bank' | 'editor' | 'basket' | 'composer' | 'import' | 'papers' | 'about' | 'pdf-batch' | 'exam-papers' | 'resources' | 'login-logs' | 'download-logs'>('bank')
   
   // 板块模式：normal=普通题库  gaokao=历届高考真题
   const [bankMode, setBankMode] = useState<'normal' | 'gaokao'>('normal')
@@ -1458,6 +1458,19 @@ export default function App() {
       a.click()
       URL.revokeObjectURL(url)
 
+      // 记录下载日志（仅管理员可见）
+      try {
+        const { data: { user: curUser } } = await supabase.auth.getUser()
+        if (curUser) {
+          supabase.from('download_logs').insert({
+            user_id: curUser.id,
+            email: curUser.email || '',
+            file_name: filename,
+            format: format === 'pdf' ? 'pdf' : 'latex'
+          }).then(() => {})
+        }
+      } catch { /* 记录失败不影响下载 */ }
+
       alert(`${format === 'pdf' ? 'PDF' : 'LaTeX 源码'}下载成功！共 ${basket.length} 道题`)
     } catch (err: any) {
       // 服务器不可用，尝试客户端生成
@@ -1483,6 +1496,18 @@ export default function App() {
         a.download = `数学试卷${includeAnswer ? (includeAnalysis ? '_教师版含解析' : '_教师版') : '_学生版'}.${ext}`
         a.click()
         URL.revokeObjectURL(url)
+        // 记录下载日志（仅管理员可见）
+        try {
+          const { data: { user: curUser } } = await supabase.auth.getUser()
+          if (curUser) {
+            supabase.from('download_logs').insert({
+              user_id: curUser.id,
+              email: curUser.email || '',
+              file_name: `数学试卷_${ext}.${ext}`,
+              format: ext === 'pdf' ? 'pdf' : 'latex'
+            }).then(() => {})
+          }
+        } catch { /* ignore */ }
         alert(`${label}下载成功！共 ${basket.length} 道题\n（服务器不可用，已切换到离线生成）`)
       } catch (clientErr: any) {
         alert('导出失败：' + (err.message || '未知错误'))
@@ -1623,7 +1648,10 @@ export default function App() {
               { key: 'basket', label: `组卷 (${basket.length})` },
               { key: 'about', label: '关于' },
               { key: 'resources', label: '资源工具' },
-              ...(isAdmin ? [{ key: 'login-logs', label: '登录记录' }] : [])
+              ...(isAdmin ? [
+                { key: 'login-logs', label: '登录记录' },
+                { key: 'download-logs', label: '下载记录' }
+              ] : [])
             ].map(tab => (
               <button
                 key={tab.key}
@@ -2929,6 +2957,11 @@ export default function App() {
         {activeTab === 'login-logs' && isAdmin && (
           <LoginLogsPage />
         )}
+
+        {/* ========== 下载记录（仅管理员） ========== */}
+        {activeTab === 'download-logs' && isAdmin && (
+          <DownloadLogsPage />
+        )}
       </main>
 
       {/* PDF 预览弹窗 */}
@@ -3257,19 +3290,30 @@ function ResourcesPage() {
 }
 
 // ==================== 登录记录页面（仅管理员） ====================
+// 通用：加载 students 表获取 user_id → 姓名映射
+async function fetchStudentNameMap(): Promise<Record<string, string>> {
+  try {
+    const { data } = await supabase.from('students').select('user_id, name')
+    const map: Record<string, string> = {}
+    ;(data || []).forEach((s: any) => { if (s.user_id) map[s.user_id] = s.name })
+    return map
+  } catch { return {} }
+}
+
 function LoginLogsPage() {
   const [logs, setLogs] = useState<any[]>([])
+  const [nameMap, setNameMap] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
 
   const loadLogs = async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('login_logs')
-      .select('*')
-      .order('login_time', { ascending: false })
-      .limit(200)
-    if (error) console.error('加载登录记录失败:', error)
-    setLogs(data || [])
+    const [nameData, logData] = await Promise.all([
+      fetchStudentNameMap(),
+      supabase.from('login_logs').select('*').order('login_time', { ascending: false }).limit(200)
+    ])
+    setNameMap(nameData)
+    if (logData.error) console.error('加载登录记录失败:', logData.error)
+    setLogs(logData.data || [])
     setLoading(false)
   }
 
@@ -3298,6 +3342,7 @@ function LoginLogsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left' }}>
+                <th style={{ padding: '8px 12px' }}>姓名</th>
                 <th style={{ padding: '8px 12px' }}>邮箱</th>
                 <th style={{ padding: '8px 12px' }}>登录时间</th>
               </tr>
@@ -3305,8 +3350,76 @@ function LoginLogsPage() {
             <tbody>
               {logs.map((log) => (
                 <tr key={log.id} style={{ borderBottom: '1px solid #f0f0ec' }}>
-                  <td style={{ padding: '8px 12px', color: '#333' }}>{log.email}</td>
+                  <td style={{ padding: '8px 12px', fontWeight: 600, color: '#333' }}>{nameMap[log.user_id] || '（未填写）'}</td>
+                  <td style={{ padding: '8px 12px', color: '#666' }}>{log.email}</td>
                   <td style={{ padding: '8px 12px', color: '#666' }}>{fmt(log.login_time)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DownloadLogsPage() {
+  const [logs, setLogs] = useState<any[]>([])
+  const [nameMap, setNameMap] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(true)
+
+  const loadLogs = async () => {
+    setLoading(true)
+    const [nameData, logData] = await Promise.all([
+      fetchStudentNameMap(),
+      supabase.from('download_logs').select('*').order('download_time', { ascending: false }).limit(200)
+    ])
+    setNameMap(nameData)
+    if (logData.error) console.error('加载下载记录失败:', logData.error)
+    setLogs(logData.data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadLogs() }, [])
+
+  const fmt = (t: string) => {
+    if (!t) return ''
+    const d = new Date(t)
+    return d.toLocaleString('zh-CN', { hour12: false })
+  }
+
+  return (
+    <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+      <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>试题下载记录</h2>
+          <button onClick={loadLogs} style={{ padding: '6px 14px', borderRadius: 6, border: '0.5px solid #534AB7', background: '#EEEDFE', color: '#534AB7', fontSize: 13, cursor: 'pointer' }}>
+            刷新
+          </button>
+        </div>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>加载中...</div>
+        ) : logs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>暂无下载记录</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left' }}>
+                <th style={{ padding: '8px 12px' }}>姓名</th>
+                <th style={{ padding: '8px 12px' }}>邮箱</th>
+                <th style={{ padding: '8px 12px' }}>下载内容</th>
+                <th style={{ padding: '8px 12px' }}>格式</th>
+                <th style={{ padding: '8px 12px' }}>时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((log) => (
+                <tr key={log.id} style={{ borderBottom: '1px solid #f0f0ec' }}>
+                  <td style={{ padding: '8px 12px', fontWeight: 600, color: '#333' }}>{nameMap[log.user_id] || '（未填写）'}</td>
+                  <td style={{ padding: '8px 12px', color: '#666' }}>{log.email}</td>
+                  <td style={{ padding: '8px 12px', color: '#333' }}>{log.file_name}</td>
+                  <td style={{ padding: '8px 12px', color: '#534AB7' }}>{log.format === 'pdf' ? 'PDF' : 'LaTeX'}</td>
+                  <td style={{ padding: '8px 12px', color: '#666' }}>{fmt(log.download_time)}</td>
                 </tr>
               ))}
             </tbody>
