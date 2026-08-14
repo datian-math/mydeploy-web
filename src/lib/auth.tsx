@@ -47,11 +47,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     init()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null)
       if (session?.user) {
         checkAllowed(session.user.id)
         checkAdmin(session.user.id)
+        // 记录登录日志（仅记录一次，避免重复触发）
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          const lastLog = sessionStorage.getItem('last_login_log')
+          const now = Date.now()
+          if (!lastLog || now - parseInt(lastLog) > 60000) {
+            sessionStorage.setItem('last_login_log', String(now))
+            supabase.from('login_logs').insert({
+              user_id: session.user.id,
+              email: session.user.email || ''
+            }).then(({ error }) => {
+              if (error) console.error('记录登录失败:', error.message)
+            })
+          }
+        }
       } else {
         setAllowed(false)
         setIsAdmin(false)

@@ -1647,16 +1647,44 @@ app.post('/api/preview-latex', async (req, res) => {
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-1e53840ff7c54f29bc0fff25bf8f028a';
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 
-// 服务器端 AI 解析每日限额（简单内存计数）
-const aiDailyUsage = { date: '', count: 0 };
+// 服务器端 AI 每日限额（文件持久化，重启不清零；ai-analysis 与 llm-reparse 共用）
+const AI_USAGE_FILE = path.join(DATA_DIR, 'ai-usage.json');
 const AI_DAILY_LIMIT = 50;
+
+function getAiUsage() {
+  try {
+    return JSON.parse(fs.readFileSync(AI_USAGE_FILE, 'utf8'));
+  } catch (e) {
+    return { date: '', count: 0 };
+  }
+}
+
+function saveAiUsage(usage) {
+  try {
+    fs.writeFileSync(AI_USAGE_FILE, JSON.stringify(usage));
+  } catch (e) { /* ignore */ }
+}
+
+function aiQuotaExceeded() {
+  const today = new Date().toISOString().slice(0, 10);
+  const usage = getAiUsage();
+  if (usage.date !== today) { usage.date = today; usage.count = 0; }
+  saveAiUsage(usage);
+  return usage.count >= AI_DAILY_LIMIT;
+}
+
+function addAiUsage() {
+  const today = new Date().toISOString().slice(0, 10);
+  const usage = getAiUsage();
+  if (usage.date !== today) { usage.date = today; usage.count = 0; }
+  usage.count += 1;
+  saveAiUsage(usage);
+}
 
 app.post('/api/ai-analysis', async (req, res) => {
   try {
-    // 每日限额检查
-    const today = new Date().toISOString().slice(0, 10);
-    if (aiDailyUsage.date !== today) { aiDailyUsage.date = today; aiDailyUsage.count = 0; }
-    if (aiDailyUsage.count >= AI_DAILY_LIMIT) {
+    // 每日限额检查（文件持久化）
+    if (aiQuotaExceeded()) {
       return res.status(429).json({ error: `今日 AI 解析已达上限（${AI_DAILY_LIMIT} 次）` });
     }
 
@@ -1716,7 +1744,7 @@ app.post('/api/ai-analysis', async (req, res) => {
     }
 
     const data = await response.json();
-    aiDailyUsage.count++;
+    addAiUsage();
     const aiAnalysis = data.choices?.[0]?.message?.content?.trim() || '';
 
     if (!aiAnalysis) {
@@ -1765,6 +1793,11 @@ ${rawContent}
 4. 题干开头的标签如【单选】【多选】、来源如（2024·新课标卷）等保留`;
 
   try {
+    // 每日 AI 限额检查（与 /api/ai-analysis 共用，文件持久化）
+    if (aiQuotaExceeded()) {
+      console.error(`[LLM Parse] Q${questionNumber}: 今日 AI 限额已用尽（${AI_DAILY_LIMIT} 次），跳过`);
+      return null;
+    }
     const response = await fetch(DEEPSEEK_API_URL, {
       method: 'POST',
       headers: {
@@ -1790,6 +1823,7 @@ ${rawContent}
 
     const data = await response.json();
     const rawOutput = data.choices?.[0]?.message?.content?.trim() || '';
+    addAiUsage();
 
     // 尝试从输出中提取 JSON（LLM 可能在 JSON 外包裹了说明文字）
     let jsonStr = rawOutput;

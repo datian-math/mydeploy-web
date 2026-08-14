@@ -533,7 +533,7 @@ export default function App() {
   const { user, signOut, isAdmin } = useAuth()
 
   // 页面状态
-  const [activeTab, setActiveTab] = useState<'bank' | 'editor' | 'basket' | 'composer' | 'import' | 'papers' | 'about' | 'pdf-batch' | 'exam-papers' | 'resources'>('bank')
+  const [activeTab, setActiveTab] = useState<'bank' | 'editor' | 'basket' | 'composer' | 'import' | 'papers' | 'about' | 'pdf-batch' | 'exam-papers' | 'resources' | 'login-logs'>('bank')
   
   // 板块模式：normal=普通题库  gaokao=历届高考真题
   const [bankMode, setBankMode] = useState<'normal' | 'gaokao'>('normal')
@@ -1622,7 +1622,8 @@ export default function App() {
               ...(isGaokao ? [{ key: 'exam-papers', label: '📑 真题PDF套卷' }] : []),
               { key: 'basket', label: `组卷 (${basket.length})` },
               { key: 'about', label: '关于' },
-              { key: 'resources', label: '资源工具' }
+              { key: 'resources', label: '资源工具' },
+              ...(isAdmin ? [{ key: 'login-logs', label: '登录记录' }] : [])
             ].map(tab => (
               <button
                 key={tab.key}
@@ -2923,6 +2924,11 @@ export default function App() {
         {activeTab === 'resources' && (
           <ResourcesPage />
         )}
+
+        {/* ========== 登录记录（仅管理员） ========== */}
+        {activeTab === 'login-logs' && isAdmin && (
+          <LoginLogsPage />
+        )}
       </main>
 
       {/* PDF 预览弹窗 */}
@@ -3248,4 +3254,65 @@ function ResourcesPage() {
       )}
     </div>
   );
+}
+
+// ==================== 登录记录页面（仅管理员） ====================
+function LoginLogsPage() {
+  const [logs, setLogs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadLogs = async () => {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('login_logs')
+      .select('*')
+      .order('login_time', { ascending: false })
+      .limit(200)
+    if (error) console.error('加载登录记录失败:', error)
+    setLogs(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadLogs() }, [])
+
+  const fmt = (t: string) => {
+    if (!t) return ''
+    const d = new Date(t)
+    return d.toLocaleString('zh-CN', { hour12: false })
+  }
+
+  return (
+    <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+      <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #e8e8e4', padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>会员登录记录</h2>
+          <button onClick={loadLogs} style={{ padding: '6px 14px', borderRadius: 6, border: '0.5px solid #534AB7', background: '#EEEDFE', color: '#534AB7', fontSize: 13, cursor: 'pointer' }}>
+            刷新
+          </button>
+        </div>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>加载中...</div>
+        ) : logs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>暂无登录记录</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left' }}>
+                <th style={{ padding: '8px 12px' }}>邮箱</th>
+                <th style={{ padding: '8px 12px' }}>登录时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((log) => (
+                <tr key={log.id} style={{ borderBottom: '1px solid #f0f0ec' }}>
+                  <td style={{ padding: '8px 12px', color: '#333' }}>{log.email}</td>
+                  <td style={{ padding: '8px 12px', color: '#666' }}>{fmt(log.login_time)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
 }
