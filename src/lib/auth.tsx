@@ -47,25 +47,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     init()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       if (session?.user) {
-        checkAllowed(session.user.id)
+        checkAllowed(session.user.id, session.user.email || '')
         checkAdmin(session.user.id)
-        // 记录登录日志（仅记录一次，避免重复触发）
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          const lastLog = sessionStorage.getItem('last_login_log')
-          const now = Date.now()
-          if (!lastLog || now - parseInt(lastLog) > 60000) {
-            sessionStorage.setItem('last_login_log', String(now))
-            supabase.from('login_logs').insert({
-              user_id: session.user.id,
-              email: session.user.email || ''
-            }).then(({ error }) => {
-              if (error) console.error('记录登录失败:', error.message)
-            })
-          }
-        }
       } else {
         setAllowed(false)
         setIsAdmin(false)
@@ -75,7 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  async function checkAllowed(userId: string) {
+  async function checkAllowed(userId: string, email: string) {
     console.log('Auth: checking allowed for', userId)
     const { data, error } = await supabase
       .from('math_allowed_users')
@@ -84,6 +70,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .single()
     console.log('Auth: allowed result', !!data, error ? error.message : '')
     setAllowed(!!data)
+    // 仅白名单用户（能进入题库）才记录登录日志，避免重复触发
+    if (data) {
+      const lastLog = sessionStorage.getItem('last_login_log')
+      const now = Date.now()
+      if (!lastLog || now - parseInt(lastLog) > 60000) {
+        sessionStorage.setItem('last_login_log', String(now))
+        supabase.from('login_logs').insert({
+          user_id: userId,
+          email: email || ''
+        }).then(({ error: insErr }) => {
+          if (insErr) console.error('记录登录失败:', insErr.message)
+        })
+      }
+    }
   }
 
   async function checkAdmin(userId: string) {
