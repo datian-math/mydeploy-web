@@ -1903,7 +1903,7 @@ export default function App() {
                           >
                             {basket.includes(q.id) ? '✓ 已添加' : '+ 加入试题篮'}
                           </button>
-                          <button onClick={() => handleEdit(q)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 4, border: '0.5px solid #ddd', background: 'transparent', cursor: 'pointer' }}>编辑</button>
+                          {isAdmin && <button onClick={() => handleEdit(q)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 4, border: '0.5px solid #ddd', background: 'transparent', cursor: 'pointer' }}>编辑</button>}
                           {isAdmin && <button onClick={() => handleDelete(q.id)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 4, border: '0.5px solid #fcc', background: '#fee', color: '#c33', cursor: 'pointer' }}>删除</button>}
                         </div>
                       </div>
