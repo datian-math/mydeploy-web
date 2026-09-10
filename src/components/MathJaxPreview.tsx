@@ -46,6 +46,19 @@ export function preprocessLatex(latex: string, questionType?: string): string {
     .replace(/\\end\{solution\}/g, '')
     .replace(/\\begin\{answer\}/g, '')
     .replace(/\\end\{answer\}/g, '')
+    // 归一化写坏的公式定界符：录题时全角/半角没分清，混进来 \（  \） 这种写法
+    // （反斜杠后跟全角括号在 LaTeX 里没有任何正当含义）。
+    // 全库实测 116 处，其中 115 处前面都存在一个「尚未闭合的 \(」——
+    // 说明它本该是收尾定界符，所以统一还原成 \)，而不是 \(。
+    // 典型形态：`则 \(A\cap B=\（　　）`（答题空括号），还原后公式能正常渲染。
+    .replace(/\\（/g, '\\)')
+    .replace(/\\）/g, '\\)')
+    // 收尾定界符被截断：内容以孤立反斜杠结尾（`\((\quad)\` 少了那个 `)`），全库 6 道。
+    // 用后顾断言排除「结尾是换行符 \\」的正常写法，只补真正孤立的那一个反斜杠。
+    .replace(/(?<!\\)\\$/, '\\)')
+    // 未解析的图片引用宏，渲染成可读的提示而不是红色报错
+    .replace(/\\figref\s*\{[^}]*\}/g, '（见图）')
+    .replace(/\\reffig\s*\{[^}]*\}/g, '（见图）')
     // 移除/替换 MathJax 不识别的图形/容器环境（保险：万一导入时漏掉）
     // tikzpicture：整块替换为占位符（正常情况已被编译为SVG图片，不会走到这里）
     // 注意：\s* 容忍 \begin {tikzpicture} 这种带空格的写法
@@ -198,89 +211,84 @@ export function convertLatexTables(text: string): string {
   return result.join('\n')
 }
 
-// 为未包裹的原始 LaTeX 数学内容添加 \( ... \) 或 \[...\] 定界符
+// 为未包裹的原始 LaTeX 数学内容添加 \( ... \) 定界符
 // 用于修复 analysis/answerContent 等字段中缺少数学模式定界符的问题
+//
+// ⚠️ 这个函数以前是完全失效的：里面所有正则都写成 /\\\\frac/ 这种形式，
+// 而正则字面量里 \\\\ 表示「两个反斜杠」，题库内容里却只有一个 ——
+// 所以它从来没匹配过任何东西（99 道题的解析因此整段显示成 LaTeX 源码）。
+// 修好之后它第一次真正生效，因此必须做得非常保守：
+// 只包裹「孤零零一行、没有任何定界符、也不含任何 LaTeX 结构」的行内数学，
+// 其余一律原样放过。宁可少包一处，也不能把本来就渲染正常的解析弄坏。
 export function ensureMathDelimiters(text: string): string {
   const lines = text.split('\n')
-  const result: string[] = []
-  let displayGroup: string[] = []
 
-  const flushDisplayGroup = () => {
-    if (displayGroup.length === 0) return
-    if (displayGroup.length === 1) {
-      result.push(`\\[${displayGroup[0]}\\]`)
-    } else {
-      const hasAlignment = displayGroup.some(l => /&/.test(l))
-      if (hasAlignment) {
-        result.push(`\\[\\begin{aligned}\n${displayGroup.join('\n')}\n\\end{aligned}\\]`)
-      } else {
-        result.push(`\\[${displayGroup.join(' \\\\\\n')}\\]`)
+  // 先扫一遍全文，算出每一行「开头时」是否已经处于数学模式里。
+  // 逐行看是看不出来的：多行块中间的行自己没有任何定界符，
+  // 但它的上一行可能开着 \( 或 \[，把它当成裸 LaTeX 包一层就会和块围栏交叉
+  // （实测有 19 处解析因此从干净变成有残留）。
+  const startsInsideMath: boolean[] = []
+  let depth = 0     // 数学模式 \( \) \[ \] $$
+  let envDepth = 0  // \begin{...} ... \end{...}
+  for (const line of lines) {
+    startsInsideMath.push(depth > 0 || envDepth > 0)
+    for (let k = 0; k < line.length; k++) {
+      const ch = line[k]
+      if (ch === '\\') {
+        const nx = line[k + 1]
+        if (nx === '(' || nx === '[') { depth++; k++; continue }
+        if (nx === ')' || nx === ']') { if (depth > 0) depth--; k++; continue }
+        // \begin{...} / \end{...} —— 环境体内部的行同样不能当裸 LaTeX 包裹
+        // （例如 \begin{cases} 之后的中间几行，自己不带任何环境标记）
+        if (line.startsWith('begin{', k + 1)) { envDepth++; k += 5; continue }
+        if (line.startsWith('end{', k + 1)) { if (envDepth > 0) envDepth--; k += 3; continue }
+        k++ // \命令 / \\ 换行 都不改变数学模式
+        continue
+      }
+      if (ch === '$') {
+        if (line[k + 1] === '$') { depth = depth > 0 ? depth - 1 : depth + 1; k++; continue }
+        depth = depth > 0 ? depth - 1 : depth + 1
       }
     }
-    displayGroup = []
   }
+  // 末行再补一个「行尾状态」，用于判断最后一行是否封闭
+  startsInsideMath.push(depth > 0)
 
-  for (const line of lines) {
+  const result: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     const trimmed = line.trim()
 
-    // 空行或已有 HTML 标签的行直接保留
-    if (!trimmed || /<[a-z][^>]*>/i.test(trimmed)) {
-      flushDisplayGroup()
+    // 空行、HTML 行、以及「本身或上一行处于数学模式内」的行，一律原样保留
+    if (!trimmed || /<[a-z][^>]*>/i.test(trimmed) || startsInsideMath[i] || startsInsideMath[i + 1]) {
       result.push(line)
       continue
     }
 
-    // 已有数学模式定界符的行直接保留
-    if ((trimmed.startsWith('\\(') && trimmed.endsWith('\\)')) ||
-        (trimmed.startsWith('\\[') && trimmed.endsWith('\\]')) ||
-        (trimmed.startsWith('$$') && trimmed.endsWith('$$'))) {
-      flushDisplayGroup()
+    // 已带任何一种定界符（$ \( \) \[ \]）的行一律原样保留
+    if (/\$|\\\(|\\\)|\\\[|\\\]/.test(trimmed)) {
       result.push(line)
       continue
     }
 
-    // 行内已包含 \( ... \) 或 \[...\] 的不再整体包裹
-    if (/\\\\\(/.test(trimmed) && /\\\\\)/.test(trimmed)) {
-      flushDisplayGroup()
-      result.push(line)
-      continue
-    }
-    if (/\\\\\[/.test(trimmed) && /\\\\\]/.test(trimmed)) {
-      flushDisplayGroup()
+    // 含 LaTeX 结构（对齐 & / 换行 \\ / 环境）的行不整体包裹
+    if (/&|\\\\|\\begin\{|\\end\{/.test(trimmed)) {
       result.push(line)
       continue
     }
 
-    // ⚠️ 关键修复：行内已有 $...$ 内联数学分隔符 → 直接保留（MathJax 原生处理）
-    const dollarCount = (trimmed.match(/\$/g) || []).length;
-    if (dollarCount >= 2 && dollarCount % 2 === 0) {
-      flushDisplayGroup()
-      result.push(line)
-      continue
-    }
-
-    // 检测是否包含原始 LaTeX 数学命令
-    const hasMathCommand = /\\\\(because|therefore|frac|sqrt|sin|cos|tan|alpha|beta|gamma|delta|pi|cdot|left|right|geq|leq|neq|pm|times|overrightarrow|vec|mathbf|mathbb|text|tfrac|dfrac|sum|prod|int|lim|infty|partial|nabla|overline|underline|bar|hat|tilde|dot|ddot|quad|qquad)/.test(trimmed)
+    // 检测是否包含原始 LaTeX 数学命令。
+    // 末尾的 (?![a-zA-Z]) 防止把 \textwidth 误认成 \text、\int 误认成 \in。
+    const hasMathCommand = /\\(because|therefore|frac|dfrac|tfrac|sqrt|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|log|ln|exp|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|rho|sigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega|cdot|cdots|ldots|dots|left|right|mid|geq|ge|leq|le|neq|ne|pm|mp|times|div|ast|star|circ|angle|triangle|parallel|perp|odot|oplus|otimes|cup|cap|in|notin|subset|subseteq|supset|supseteq|setminus|emptyset|varnothing|forall|exists|overrightarrow|vec|mathbf|mathbb|mathcal|mathrm|text|operatorname|sum|prod|int|iint|oint|lim|infty|partial|nabla|overline|underline|overbrace|underbrace|bar|hat|tilde|dot|ddot|quad|qquad|binom|choose|sim|cong|equiv|approx|propto|to|rightarrow|leftarrow|Rightarrow|Leftarrow|leftrightarrow|Leftrightarrow|langle|rangle|ll|gg|prime|degree|hspace|vspace|displaystyle|limits|nolimits(?![a-zA-Z]))/.test(trimmed)
 
     if (!hasMathCommand) {
-      flushDisplayGroup()
       result.push(line)
       continue
     }
 
-    const hasAlignment = /&/.test(trimmed)
-    const hasDisplayEnv = /\\\\begin\{(aligned|cases|matrix|bmatrix|pmatrix|array|gather|align|alignat|flalign|multline)\}/.test(trimmed)
-    const hasLineBreak = /\\\\\\\\/.test(trimmed)
-
-    if (hasDisplayEnv || hasAlignment || hasLineBreak) {
-      displayGroup.push(trimmed)
-    } else {
-      flushDisplayGroup()
-      result.push(`\\(${trimmed}\\)`)
-    }
+    result.push(`\\(${trimmed}\\)`)
   }
 
-  flushDisplayGroup()
   return result.join('\n')
 }
 
