@@ -86,3 +86,31 @@ CREATE POLICY "Admins can insert allowed users"
 CREATE POLICY "Admins can delete allowed users"
   ON math_allowed_users FOR DELETE
   USING (EXISTS (SELECT 1 FROM admins WHERE user_id = auth.uid()));
+
+-- 课堂讲题白板（题目快照 + 手写板书，每用户多块）
+-- data 结构：{ items: BoardItem[], doc: BoardDoc }
+CREATE TABLE math_whiteboards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT '未命名白板',
+  data JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_math_whiteboards_user_id ON math_whiteboards(user_id);
+CREATE INDEX idx_math_whiteboards_updated_at ON math_whiteboards(user_id, updated_at DESC);
+
+ALTER TABLE math_whiteboards ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read own whiteboards"
+  ON math_whiteboards FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own whiteboards"
+  ON math_whiteboards FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own whiteboards"
+  ON math_whiteboards FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own whiteboards"
+  ON math_whiteboards FOR DELETE USING (auth.uid() = user_id);
