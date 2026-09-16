@@ -162,8 +162,22 @@ export async function generatePaperClient(
 // ===== 客户端 PDF 生成（GitHub Pages 无服务器时用浏览器渲染）=====
 
 // 简化预处理：只做安全清理，保留数学定界符和 LaTeX 环境给 MathJax 渲染
-function preprocessForPdf(latex: string, images: Record<string, string>): string {
+function preprocessForPdf(latex: string, images: Record<string, string>, questionType?: string): string {
   if (!latex) return ''
+  // 和网页端 MathJaxPreview.preprocessLatex 保持同一套编号规则，避免同一道题
+  // 在页面和 PDF 里显示不一致
+  const isSolution = questionType === '解答' || questionType === '解答题' || (questionType?.includes('解答') ?? false)
+  const isChoice = questionType === '单选' || questionType === '多选'
+  const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩']
+  const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+  let itemIdx = 0
+  const nextLabel = (): string => {
+    itemIdx++
+    if (isSolution) return `(${itemIdx}) `
+    if (isChoice) return `${OPTION_LABELS[itemIdx - 1] || (itemIdx + '.')}. `
+    return `${CIRCLED[itemIdx - 1] || (itemIdx + '.')} `
+  }
+
   let text = latex
   // 只清理 MathJax 无法处理或会破坏 $$ 块的容器环境
   text = text.replace(/\begin\{minipage\}(\[[^\]]*\])?\{[^}]*\}/g, '')
@@ -175,8 +189,13 @@ function preprocessForPdf(latex: string, images: Record<string, string>): string
     const url = images[key] || ''
     return url ? `<img src="${url}" style="max-width:280px;display:block;margin:8px auto;">` : ''
   })
-  // \item 在 MathJax 外才转换（选择题选项）
-  text = text.replace(/\item\s*/g, '<br>&nbsp;&nbsp;• ')
+  // 列表环境：剥掉外壳（缩进交给 CSS），\item 由下面统一编号
+  text = text.replace(/\\begin\{enumerate\}(\[[^\]]*\])?/g, '').replace(/\\end\{enumerate\}/g, '')
+  text = text.replace(/\\begin\{itemize\}(\[[^\]]*\])?/g, '').replace(/\\end\{itemize\}/g, '')
+  // 带自定义标签的 \item[\(p_1\):] 保留标签文字，不叠加自动编号
+  text = text.replace(/\\item\s*\[([^\]]*)\]\s*/g, '<br>&nbsp;&nbsp;$1 ')
+  // 其余 \item 按题型编号
+  text = text.replace(/\\item\s*/g, () => '<br>&nbsp;&nbsp;' + nextLabel())
   // 简单命令
   text = text.replace(/\\rule\{[^}]*\}\{[^}]*\}/g, '______')
   // 转义美元符还原（\$ → $），让 MathJax 处理行内公式
@@ -225,7 +244,7 @@ export async function generatePdfClient(
     const frontQ = toFrontendQuestion(q)
     const div = document.createElement('div')
     div.style.cssText = 'margin-bottom:20px;page-break-inside:avoid;text-align:left;'
-    const qhtml = preprocessForPdf(frontQ.content, frontQ.images)
+    const qhtml = preprocessForPdf(frontQ.content, frontQ.images, frontQ.type)
     const qType = frontQ.type || ''
     div.innerHTML = `<div style="margin-bottom:10px;"><span style="font-weight:700;">${idx + 1}.</span> <span style="color:#666;font-size:12px;">（${qType}）</span> ${qhtml}</div>`
     container.appendChild(div)
@@ -247,8 +266,8 @@ export async function generatePdfClient(
       const div = document.createElement('div')
       div.style.cssText = 'margin-bottom:18px;page-break-inside:avoid;text-align:left;'
       let html = `<div style="margin-bottom:8px;font-weight:700;font-size:15px;">第 ${idx + 1} 题</div>`
-      if (answer) html += `<div style="margin:6px 0;"><span style="color:#2e7d32;font-weight:700;">答案：</span>${preprocessForPdf(answer, frontQ.images)}</div>`
-      if (analysis) html += `<div style="margin-top:10px;padding-left:1em;border-left:3px solid #ddd;"><span style="font-weight:700;">解析：</span>${preprocessForPdf(analysis, frontQ.images)}</div>`
+      if (answer) html += `<div style="margin:6px 0;"><span style="color:#2e7d32;font-weight:700;">答案：</span>${preprocessForPdf(answer, frontQ.images, frontQ.type)}</div>`
+      if (analysis) html += `<div style="margin-top:10px;padding-left:1em;border-left:3px solid #ddd;"><span style="font-weight:700;">解析：</span>${preprocessForPdf(analysis, frontQ.images, frontQ.type)}</div>`
       div.innerHTML = html
       container.appendChild(div)
       blocks.push(div)
