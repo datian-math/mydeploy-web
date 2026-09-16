@@ -74,7 +74,13 @@ export function preprocessLatex(latex: string, questionType?: string): string {
     // minipage: 提取内部，丢弃容器（含 [pos]{width} 参数）
     .replace(/\\begin\{minipage\}(\[[^\]]*\])?\{[^}]*\}/g, '').replace(/\\end\{minipage\}/g, '')
     .replace(/\\begin\{center\}[\s\S]*?\\end\{center\}/g, (m) => m.replace(/\\begin\{center\}/g, '').replace(/\\end\{center\}/g, ''))
-    .replace(/\\begin\{tabular\}[\s\S]*?\\end\{tabular\}/g, (m) => m.replace(/\\begin\{tabular\}(\[[^\]]*\])?\{[^}]*\}/g, '').replace(/\\end\{tabular\}/g, '').replace(/\\hline/g, '').replace(/\\\\/g, ' | ').replace(/&/g, ' | '))
+    // 注意：tabular 不在这里处理，交给 convertLatexTables 转成 HTML 表格
+    // 清理不影响内容的排版命令（字号/长度/间距等）
+    .replace(/\\(scriptsize|footnotesize|small|normalsize|large|Large|LARGE|tiny|huge|Huge|bfseries|itshape|ttfamily|rmfamily|sffamily)\b/g, '')
+    .replace(/\\setlength\s*\{[^}]*\}\{[^}]*\}/g, '')
+    .replace(/\\renewcommand\s*\{[^}]*\}\{[^}]*\}/g, '')
+    .replace(/\\vspace\*?\{[^}]*\}/g, '')
+    .replace(/\\vskip[^\n]*/g, '')
     .replace(/\\begin\{enumerate\}[\s\S]*?\\end\{enumerate\}/g, (m) => m.replace(/\\begin\{enumerate\}(\[[^\]]*\])?/g, '').replace(/\\end\{enumerate\}/g, '').replace(/\\item\s*/g, '\n• '))
     .replace(/\\begin\{itemize\}[\s\S]*?\\end\{itemize\}/g, (m) => m.replace(/\\begin\{itemize\}(\[[^\]]*\])?/g, '').replace(/\\end\{itemize\}/g, '').replace(/\\item\s*/g, '\n• '))
     .replace(/\\begin\{tasks\}\(\d+\)[\s\S]*?\\end\{tasks\}/g, (m) => m.replace(/\\begin\{tasks\}\(\d+\)/g, '').replace(/\\end\{tasks\}/g, '').replace(/\\task(?:\[[^\]]*\])?\s*/g, '\n① '))
@@ -167,8 +173,44 @@ export function compactImageWhitespace(text: string): string {
 
 // 将 LaTeX 表格语法转换为 HTML 表格（MathJax 不支持 tabular 环境）
 export function convertLatexTables(text: string): string {
-  const lines = text.split('\n')
-  const result: string[] = []
+  // 单元格内容处理：\multicolumn{N}{fmt}{text} → 提取文本并记录跨列数
+  const parseCell = (raw: string): { text: string; span: number } => {
+    let cell = raw.trim()
+    let span = 1
+    const mc = cell.match(/\\multicolumn\{(\d+)\}\{[^}]*\}\{([\s\S]*)\}$/)
+    if (mc) {
+      span = parseInt(mc[1]) || 1
+      cell = mc[2].trim()
+    }
+    // 去掉残留的行命令
+    cell = cell.replace(/\\(hline|cline\{[^}]*\}|toprule|midrule|bottomrule)\b/g, '').trim()
+    return { text: cell, span }
+  }
+
+  // ===== 1. 完整的 tabular 环境（块级转换） =====
+  let result = text.replace(
+    /\\begin\{tabular\}(\[[^\]]*\])?\{[^}]*\}([\s\S]*?)\\end\{tabular\}/g,
+    (_m, _opt, body: string) => {
+      // 按 \\ 拆行（注意行末的 \\ 也要切）
+      const rawRows = body.split(/\\\\/)
+        .map((r: string) => r.replace(/\\hline|\\toprule|\\midrule|\\bottomrule|\\cline\{[^}]*\}/g, '').trim())
+        .filter((r: string) => r.length > 0 && (r.includes('&') || /\\multicolumn/.test(r)))
+      if (rawRows.length === 0) return ''
+      const rowsHtml = rawRows.map((row: string, ri: number) => {
+        const cells = row.split('&').map(parseCell)
+        const tag = ri === 0 ? 'th' : 'td'
+        const tds = cells.map(c =>
+          `<${tag}${c.span > 1 ? ` colspan="${c.span}"` : ''} style="border:1px solid #ccc;padding:4px 10px;text-align:center;${ri === 0 ? 'background:#f7f7f4;' : ''}">${c.text}</${tag}>`
+        ).join('')
+        return `<tr>${tds}</tr>`
+      }).join('')
+      return `<table style="border-collapse:collapse;margin:12px auto;font-size:14px;">${rowsHtml}</table>`
+    }
+  )
+
+  // ===== 2. 兼容：没有 tabular 包裹的散落 & 行（旧数据） =====
+  const lines = result.split('\n')
+  const out: string[] = []
   let tableGroup: string[] = []
 
   const flushTable = () => {
@@ -176,22 +218,20 @@ export function convertLatexTables(text: string): string {
     const dataRows = tableGroup
       .map(l => l.trim())
       .filter(l => l.includes('&') && !l.includes('\\hline'))
-      .map(l => l.replace(/\\\\$/, '').replace(/\\\\\\hline$/, '').trim())
+      .map(l => l.replace(/\\\\$/, '').trim())
 
     if (dataRows.length === 0) {
-      result.push(...tableGroup)
+      out.push(...tableGroup)
     } else {
-      let html = '<table style="border-collapse:collapse;margin:12px 0;font-size:14px;">'
+      let html = '<table style="border-collapse:collapse;margin:12px auto;font-size:14px;">'
       dataRows.forEach(row => {
-        const cells = row.split('&').map(c => c.trim())
-        html += '<tr>'
-        cells.forEach(cell => {
-          html += `<td style="border:1px solid #ccc;padding:6px 12px;text-align:center;">${cell}</td>`
-        })
-        html += '</tr>'
+        const cells = row.split('&').map((c: string) => parseCell(c))
+        html += '<tr>' + cells.map(c =>
+          `<td${c.span > 1 ? ` colspan="${c.span}"` : ''} style="border:1px solid #ccc;padding:4px 10px;text-align:center;">${c.text}</td>`
+        ).join('') + '</tr>'
       })
       html += '</table>'
-      result.push(html)
+      out.push(html)
     }
     tableGroup = []
   }
@@ -199,16 +239,15 @@ export function convertLatexTables(text: string): string {
   for (const line of lines) {
     const trimmed = line.trim()
     const isTableLine = trimmed.includes('&') || trimmed.includes('\\hline') || /^\\\\/.test(trimmed)
-
     if (isTableLine && !trimmed.includes('\\begin') && !trimmed.includes('\\end')) {
       tableGroup.push(line)
     } else {
       flushTable()
-      result.push(line)
+      out.push(line)
     }
   }
   flushTable()
-  return result.join('\n')
+  return out.join('\n')
 }
 
 // 为未包裹的原始 LaTeX 数学内容添加 \( ... \) 定界符
