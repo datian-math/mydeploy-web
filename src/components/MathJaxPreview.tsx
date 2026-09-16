@@ -36,6 +36,19 @@ export function preprocessLatex(latex: string, questionType?: string): string {
     return `\n${label}`
   }
 
+  // enumerate 是**有序**列表，按题型给编号：
+  //   解答题 → (1)(2)(3)   小题号，和常见试卷一致
+  //   其余   → ①②③      中文数学题里并列命题的习惯写法
+  // 独立计数器，避免和裸 \item 的编号互相干扰
+  const CIRCLED_LABELS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩']
+  let enumIndex = 0
+  const enumItemReplacer = (): string => {
+    enumIndex++
+    return isSolution
+      ? `\n(${enumIndex}) `
+      : `\n${CIRCLED_LABELS[enumIndex - 1] || (enumIndex + '.')} `
+  }
+
   return latex
     // 移除 exam/文档类的环境
     .replace(/\\begin\{choices\}/g, '')
@@ -81,7 +94,14 @@ export function preprocessLatex(latex: string, questionType?: string): string {
     .replace(/\\renewcommand\s*\{[^}]*\}\{[^}]*\}/g, '')
     .replace(/\\vspace\*?\{[^}]*\}/g, '')
     .replace(/\\vskip[^\n]*/g, '')
-    .replace(/\\begin\{enumerate\}[\s\S]*?\\end\{enumerate\}/g, (m) => m.replace(/\\begin\{enumerate\}(\[[^\]]*\])?/g, '').replace(/\\end\{enumerate\}/g, '').replace(/\\item\s*/g, '\n• '))
+    // enumerate 是**有序**列表：解答题 → (1)(2)，其余 → ①②③（见上方 enumItemReplacer）
+    // 先处理带自定义标签的 \item[\(p_1\):]，保留标签文字，避免和自动编号重复
+    // （itemize 才是无序列表，下面那行仍用 •）
+    .replace(/\\begin\{enumerate\}[\s\S]*?\\end\{enumerate\}/g, (m) => m
+      .replace(/\\begin\{enumerate\}(\[[^\]]*\])?/g, '')
+      .replace(/\\end\{enumerate\}/g, '')
+      .replace(/\\item\s*\[([^\]]*)\]\s*/g, '\n$1 ')
+      .replace(/\\item\s*/g, enumItemReplacer))
     .replace(/\\begin\{itemize\}[\s\S]*?\\end\{itemize\}/g, (m) => m.replace(/\\begin\{itemize\}(\[[^\]]*\])?/g, '').replace(/\\end\{itemize\}/g, '').replace(/\\item\s*/g, '\n• '))
     .replace(/\\begin\{tasks\}\(\d+\)[\s\S]*?\\end\{tasks\}/g, (m) => m.replace(/\\begin\{tasks\}\(\d+\)/g, '').replace(/\\end\{tasks\}/g, '').replace(/\\task(?:\[[^\]]*\])?\s*/g, '\n① '))
     // 处理 \item 命令，根据题型转换
