@@ -1,7 +1,7 @@
 // LaTeX / MathJax 渲染组件与相关文本预处理工具
 // 从 App.tsx 抽出，供题库页与白板页共用
 import React, { useEffect, useRef, useState } from 'react'
-import { API, IS_GITHUB_PAGES } from '../lib/config'
+import { API, IS_GITHUB_PAGES, GH_BASE } from '../lib/config'
 
 // MathJax 全局类型声明
 declare global {
@@ -433,7 +433,12 @@ export function MathJaxPreview({ latex, imageUrls, questionType, style, imgMaxWi
         }
       }
       if (url) {
-        const fullUrl = url.startsWith('http') ? url : `${API}${url}`
+        // GitHub Pages 上图片是静态资源，必须拼仓库子路径，不能拼 localhost:3001
+        const base = IS_GITHUB_PAGES ? GH_BASE : API
+        let fullUrl: string
+        if (url.startsWith('http')) fullUrl = url
+        else if (IS_GITHUB_PAGES && url.startsWith(GH_BASE + '/')) fullUrl = url // 已带仓库前缀，避免重复拼接
+        else fullUrl = `${base}${url.startsWith('/') ? '' : '/'}${url}`
         // 用 nextElementSibling 避免文本节点干扰；加 min-height 防止图片加载前/失败后高度塌陷
         // onerror 做防御：先隐藏自己，再尝试显示提示语（容错 nextElementSibling 不存在的情况）
         return `<div style="display:block;min-height:60px;"><img src="${fullUrl}" alt="diagram" onerror="this.style.display='none';var s=this.nextElementSibling;if(s)s.style.display='block';" style="display:block;max-width:${imgMaxWidth}px;height:auto;margin:12px 0;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1);" /><span style="display:none;color:#e74c3c;font-size:12px;padding:8px 0;">[图片: ${key} 未找到]</span></div>`
