@@ -48,3 +48,6 @@ test_corrupt_out.jpg
 test_fake.jpg
 test_input.jpg
 tectonic
+
+# Gitee Pages 打包目录（独立仓库）
+gitee-pages/

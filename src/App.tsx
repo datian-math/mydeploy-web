@@ -6,7 +6,7 @@ import { useAuth } from './lib/auth'
 import { supabase } from './lib/supabase'
 import { fetchBasket as supabaseFetchBasket, addToBasket as supabaseAddToBasket, removeFromBasket as supabaseRemoveFromBasket, clearBasket as supabaseClearBasket, fetchQuestions as supabaseFetchQuestions, fetchCategories as supabaseFetchCategories, createQuestion as supabaseCreateQuestion, updateQuestion as supabaseUpdateQuestion, deleteQuestion as supabaseDeleteQuestion, toFrontendQuestion, toSupabaseQuestion } from './lib/db'
 import { generatePaperClient, generatePdfClient } from './lib/paperGenerator'
-import { API } from './lib/config'
+import { API, IS_STATIC_HOST, STATIC_BASE } from './lib/config'
 import { MathJaxPreview, MathJaxInline, preprocessLatex, extractAbcdOptions, compactImageWhitespace } from './components/MathJaxPreview'
 import WhiteboardPage from './whiteboard/WhiteboardPage'
 import { loadBoardItems, saveBoardItems, makeBoardItem, saveDoc } from './whiteboard/storage'
@@ -1497,11 +1497,10 @@ export default function App() {
                         // 若已通过 options 数组单独渲染选项，则从 content 中剥离 \item 行和 \img{}，避免重复显示
                         // \img{} 抽出来放到选项**后面**渲染，不在题目和选项之间
                         let displayContent = q.content
-                        // 修复高考题/题库图片路径（GitHub Pages兼容）
-                        const isGH = window.location.hostname.includes('github.io')
-                        if (isGH) {
-                          displayContent = displayContent.replace(/\/api\/exam-images\//g, '/mydeploy-web/exam-images/')
-                          displayContent = displayContent.replace(/\/api\/bank-images\//g, '/mydeploy-web/bank-images/')
+                        // 修复高考题/题库图片路径（GitHub Pages / Gitee Pages 静态托管兼容）
+                        if (IS_STATIC_HOST) {
+                          displayContent = displayContent.replace(/\/api\/exam-images\//g, `${STATIC_BASE}/exam-images/`)
+                          displayContent = displayContent.replace(/\/api\/bank-images\//g, `${STATIC_BASE}/bank-images/`)
                         }
                         let trailingImgs = ''
                         if (q.options && q.options.length > 0) {

@@ -1,7 +1,7 @@
 // LaTeX / MathJax 渲染组件与相关文本预处理工具
 // 从 App.tsx 抽出，供题库页与白板页共用
 import React, { useEffect, useRef, useState } from 'react'
-import { API, IS_GITHUB_PAGES, GH_BASE } from '../lib/config'
+import { API, IS_STATIC_HOST, STATIC_BASE } from '../lib/config'
 
 // MathJax 全局类型声明
 declare global {
@@ -393,9 +393,9 @@ export function MathJaxPreview({ latex, imageUrls, questionType, style, imgMaxWi
     // 预处理 LaTeX
     let processed = preprocessLatex(latex, questionType)
     // 修复高考题/题库图片路径
-    if (IS_GITHUB_PAGES) {
-      processed = processed.replace(/\/api\/exam-images\//g, '/mydeploy-web/exam-images/')
-      processed = processed.replace(/\/api\/bank-images\//g, '/mydeploy-web/bank-images/')
+    if (IS_STATIC_HOST) {
+      processed = processed.replace(/\/api\/exam-images\//g, `${STATIC_BASE}/exam-images/`)
+      processed = processed.replace(/\/api\/bank-images\//g, `${STATIC_BASE}/bank-images/`)
     }
     // 转换表格语法为 HTML 表格（MathJax 不支持 tabular）
     processed = convertLatexTables(processed)
@@ -433,11 +433,11 @@ export function MathJaxPreview({ latex, imageUrls, questionType, style, imgMaxWi
         }
       }
       if (url) {
-        // GitHub Pages 上图片是静态资源，必须拼仓库子路径，不能拼 localhost:3001
-        const base = IS_GITHUB_PAGES ? GH_BASE : API
+        // 静态托管（GitHub Pages / Gitee Pages）上图片是静态资源，拼仓库子路径，不能拼 localhost:3001
+        const base = IS_STATIC_HOST ? STATIC_BASE : API
         let fullUrl: string
         if (url.startsWith('http')) fullUrl = url
-        else if (IS_GITHUB_PAGES && url.startsWith(GH_BASE + '/')) fullUrl = url // 已带仓库前缀，避免重复拼接
+        else if (IS_STATIC_HOST && STATIC_BASE && url.startsWith(STATIC_BASE + '/')) fullUrl = url // 已带前缀，避免重复拼接
         else fullUrl = `${base}${url.startsWith('/') ? '' : '/'}${url}`
         // 用 nextElementSibling 避免文本节点干扰；加 min-height 防止图片加载前/失败后高度塌陷
         // onerror 做防御：先隐藏自己，再尝试显示提示语（容错 nextElementSibling 不存在的情况）

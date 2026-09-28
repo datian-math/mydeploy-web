@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { IS_STATIC_HOST, STATIC_BASE } from './config'
 
 // ===== Questions =====
 
@@ -44,14 +45,14 @@ function extractOptions(q: Question): string[] {
 
 // Supabase → 前端用的格式
 export function toFrontendQuestion(q: Question) {
-  // 修复高考题图片路径：本地服务器用 /api/exam-images/，GitHub Pages 用绝对路径
-  const isGitHubPages = typeof window !== 'undefined' && window.location.hostname.includes('github.io')
-  const imgBase = isGitHubPages ? '/mydeploy-web/exam-images/' : '/api/exam-images/'
-  const fixImgPath = (s: string) => isGitHubPages
-    ? s.replace(/\/api\/exam-images\//g, imgBase).replace(/\/api\/bank-images\//g, '/mydeploy-web/bank-images/')
-      // 题库图片：本地 /uploads/images/ → GitHub Pages 需带仓库子路径
-      .replace(/(["'(\s])\/uploads\/images\//g, '$1/mydeploy-web/uploads/images/')
-      .replace(/^\/uploads\/images\//, '/mydeploy-web/uploads/images/')
+  // 静态托管（GitHub Pages / Gitee Pages）下图片走静态资源路径，前缀从 URL 自动推断
+  const imgBase = IS_STATIC_HOST ? `${STATIC_BASE}/exam-images/` : '/api/exam-images/'
+  const fixImgPath = (s: string) => IS_STATIC_HOST
+    ? s.replace(/\/api\/exam-images\//g, imgBase)
+      .replace(/\/api\/bank-images\//g, `${STATIC_BASE}/bank-images/`)
+      // 题库图片：本地 /uploads/images/ → 静态托管需带仓库子路径
+      .replace(/(["'(\s])\/uploads\/images\//g, `$1${STATIC_BASE}/uploads/images/`)
+      .replace(/^\/uploads\/images\//, `${STATIC_BASE}/uploads/images/`)
     : s
   // 图片 URL 加时间戳参数，绕过 Cloudflare 缓存的错误 Content-Type
   const cacheBust = (u: string) => u.includes('?') ? u + '&t=' + Date.now() : u + '?t=' + Date.now()
