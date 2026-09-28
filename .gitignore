@@ -22,7 +22,9 @@ agent_result.md
 dev.log
 frontend.log
 server*.log
-uploads/
+/uploads/
+!public/uploads/
+!public/uploads/**
 mineru_*
 *.bat
 test_*
