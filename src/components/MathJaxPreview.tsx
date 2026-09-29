@@ -199,6 +199,15 @@ export function compactImageWhitespace(text: string): string {
 
 // 将 LaTeX 表格语法转换为 HTML 表格（MathJax 不支持 tabular 环境）
 export function convertLatexTables(text: string): string {
+  // HTML 实体（&lt; &gt; &amp; …）里的 & 是实体标记，不是 LaTeX 的列分隔符。
+  // 题干经 HTML 转义后会出现大量 &lt;（如 `0<x<1`），若不保护就会被下面
+  // 「散落 & 行」的表格检测当成表格行，渲染出一个假表格。
+  // 先把实体的 & 换成占位符，函数返回前再还原。
+  const ENT_MARK = '\u0001'
+  const protectEntities = (s: string) =>
+    s.replace(/&(?:[a-zA-Z][a-zA-Z0-9]{1,10}|#\d+);/g, (m) => ENT_MARK + m.slice(1))
+  const restoreEntities = (s: string) => s.split(ENT_MARK).join('&')
+
   // 单元格内容处理：\multicolumn{N}{fmt}{text} → 提取文本并记录跨列数
   const parseCell = (raw: string): { text: string; span: number } => {
     let cell = raw.trim()
@@ -214,7 +223,7 @@ export function convertLatexTables(text: string): string {
   }
 
   // ===== 1. 完整的 tabular 环境（块级转换） =====
-  let result = text.replace(
+  let result = protectEntities(text).replace(
     /\\begin\{tabular\}(\[[^\]]*\])?\{[^}]*\}([\s\S]*?)\\end\{tabular\}/g,
     (_m, _opt, body: string) => {
       // 按 \\ 拆行（注意行末的 \\ 也要切）
@@ -273,7 +282,7 @@ export function convertLatexTables(text: string): string {
     }
   }
   flushTable()
-  return out.join('\n')
+  return restoreEntities(out.join('\n'))
 }
 
 // 为未包裹的原始 LaTeX 数学内容添加 \( ... \) 定界符
