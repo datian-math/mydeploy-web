@@ -110,6 +110,11 @@ export function preprocessLatex(latex: string, questionType?: string): string {
       .replace(/\\item\s*/g, enumItemReplacer))
     .replace(/\\begin\{itemize\}[\s\S]*?\\end\{itemize\}/g, (m) => m.replace(/\\begin\{itemize\}(\[[^\]]*\])?/g, '').replace(/\\end\{itemize\}/g, '').replace(/\\item\s*/g, '\n• '))
     .replace(/\\begin\{tasks\}\(\d+\)[\s\S]*?\\end\{tasks\}/g, (m) => m.replace(/\\begin\{tasks\}\(\d+\)/g, '').replace(/\\end\{tasks\}/g, '').replace(/\\task(?:\[[^\]]*\])?\s*/g, '\n① '))
+    // 嵌套列表兜底：上面三个都是非贪婪匹配，遇到 enumerate 套 enumerate 时
+    // 只吃掉内层的 \end，外层的 \end{enumerate} 会残留成源码（全库 55 题）。
+    // LaTeX 里环境必然配对，所以落单的起止标签一律清掉。
+    .replace(/\\end\{(enumerate|itemize|tasks)\}/g, '')
+    .replace(/\\begin\{(enumerate|itemize)\}(\[[^\]]*\])?/g, '')
     // 处理 \item 命令，根据题型转换
     .replace(/\\item\s*/g, itemReplacer)
     // 将 \includegraphics 转换为 \img{path}，让预览能显示占位符或实际图片
