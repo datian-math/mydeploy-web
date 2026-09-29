@@ -14,6 +14,12 @@ declare global {
 // questionType: 题型，用于决定 \item 的转换格式
 export function preprocessLatex(latex: string, questionType?: string): string {
   if (!latex || typeof latex !== 'string') return ''
+  // ★ HTML 转义：处理结果会通过 innerHTML 渲染，裸的 < 会被浏览器当成标签开始
+  //   典型症状：`0<x<1` 里的 `<x` 被解析成标签，把后面内容一路吃掉，
+  //   连带公式定界符 $ 配对错乱，整段以源码形式显示（全库约 17% 的题含此模式）。
+  //   只转义 <，不动 & 和 >：& 保持原样避免把已有的 &lt; 二次转义；
+  //   > 单独出现不会被误解析。转义后 DOM 的 textContent 仍是 <，MathJax 正常渲染。
+  latex = latex.replace(/</g, '&lt;')
   // 去重：相同的 \img{key} 只保留第一次出现（防止同一图片渲染多次）
   // 同时支持 \img{key} 和 \img[key] 两种写法，并处理未闭合的残片
   const seenImgs = new Set<string>()
