@@ -19,7 +19,18 @@ export function preprocessLatex(latex: string, questionType?: string): string {
   //   连带公式定界符 $ 配对错乱，整段以源码形式显示（全库约 17% 的题含此模式）。
   //   只转义 <，不动 & 和 >：& 保持原样避免把已有的 &lt; 二次转义；
   //   > 单独出现不会被误解析。转义后 DOM 的 textContent 仍是 <，MathJax 正常渲染。
+  //
+  //   ⚠️ 但高考真题的图片是以现成 HTML 存在 content 里的（`<img src="...">`，
+  //   全库 1642 处），直接转义会把它们变成可见的源码文本。所以先把 <img> 摘出来
+  //   存好，转义完再放回去。只认 <img>：数据里还有 `<x>` `<a>` 之类（36 处），
+  //   那些其实是数学内容（a<x<b）被误读成标签，必须照常转义。
+  const keptImgs: string[] = []
+  latex = latex.replace(/<img\b[^>]*>/gi, (tag) => {
+    keptImgs.push(tag)
+    return `\u0002${keptImgs.length - 1}\u0002`
+  })
   latex = latex.replace(/</g, '&lt;')
+  latex = latex.replace(/\u0002(\d+)\u0002/g, (_m, i) => keptImgs[Number(i)] ?? '')
   // 去重：相同的 \img{key} 只保留第一次出现（防止同一图片渲染多次）
   // 同时支持 \img{key} 和 \img[key] 两种写法，并处理未闭合的残片
   const seenImgs = new Set<string>()
