@@ -1571,6 +1571,16 @@ export default function App() {
                             trailingImgs = imgMatches.map(m => m[0]).join('\n')
                             displayContent = displayContent.replace(/\\img[\{\[][^\s]*/g, '').replace(/\n{3,}/g, '\n\n').trim()
                           }
+                          // 正文里还写着 A. … B. … C. … D. …（导出 PDF 要用）时，把这些行也去掉，
+                          // 否则会和上面的选项网格重复显示一遍
+                          const abcdIdx = displayContent.search(/(^|[\s；;。])A\s*[.．、]\s*/)
+                          if (abcdIdx >= 0) {
+                            const after = displayContent.slice(abcdIdx)
+                            if (/B\s*[.．、]/.test(after) && /C\s*[.．、]/.test(after)) {
+                              const lead = /^[\s；;。]/.test(after) ? 1 : 0   // 前导空白/标点留着，别连题干最后一字一起切
+                              displayContent = displayContent.slice(0, abcdIdx + lead).trim()
+                            }
+                          }
                         }
                         return (
                           <>
