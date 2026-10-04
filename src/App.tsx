@@ -8,6 +8,7 @@ import { fetchBasket as supabaseFetchBasket, addToBasket as supabaseAddToBasket,
 import { generatePaperClient, generatePdfClient } from './lib/paperGenerator'
 import { API, IS_STATIC_HOST, STATIC_BASE } from './lib/config'
 import { MathJaxPreview, MathJaxInline, preprocessLatex, extractAbcdOptions, compactImageWhitespace } from './components/MathJaxPreview'
+import { parseQuery, searchQuestions, clearFieldCache } from './lib/searchEngine'
 import WhiteboardPage from './whiteboard/WhiteboardPage'
 import { loadBoardItems, saveBoardItems, makeBoardItem, saveDoc } from './whiteboard/storage'
 import type { BoardDoc, BoardItem } from './whiteboard/types'
@@ -87,6 +88,13 @@ export default function App() {
   const [selectedType, setSelectedType] = useState<string>('all')
   const [selectedGrade, setSelectedGrade] = useState<string>('all')
   const [searchKeyword, setSearchKeyword] = useState('')
+  // 智能搜索：每题命中的条件标签（仅搜索时非空）
+  const [searchHits, setSearchHits] = useState<Record<string, { hits: string[]; misses: string[] }>>({})
+  // 搜索语料缓存：带关键词时整批拉到内存，之后打字只做本地打分排序（不再打 Supabase）
+  // key 由「模式 + 筛选条件」组成，筛选一变就失效重拉
+  const searchCorpusRef = useRef<{ key: string; rows: any[] }>({ key: '', rows: [] })
+  // 请求序号：快速输入时先后发起的请求可能乱序返回，只认最后一次
+  const fetchSeqRef = useRef(0)
   
   // 编辑器状态
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null)
@@ -218,7 +226,25 @@ export default function App() {
     categoryName: q.categoryName || '',
   })
 
-  const fetchQuestions = async () => {
+  // 搜索结果里的命中/缺少标签（只在智能搜索时显示）
+  const renderSearchChips = (id: string) => {
+    const sh = searchHits[id]
+    if (!sh || (!sh.hits.length && !sh.misses.length)) return null
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8 }}>
+        {sh.hits.map((h, i) => (
+          <span key={'h' + i} style={{ fontSize: 12, background: '#e8f5e9', color: '#2e7d32', padding: '1px 8px', borderRadius: 10 }}>{h}</span>
+        ))}
+        {sh.misses.length > 0 && <span style={{ fontSize: 11, color: '#bbb' }}>缺少</span>}
+        {sh.misses.map((m, i) => (
+          <span key={'m' + i} style={{ fontSize: 12, background: '#f5f5f5', color: '#aaa', padding: '1px 8px', borderRadius: 10 }}>{m}</span>
+        ))}
+      </div>
+    )
+  }
+
+  const fetchQuestions = async (fresh = false) => {
+    const seq = ++fetchSeqRef.current
     try {
       const filters: any = {}
       let filterCategoryName = ''
@@ -259,10 +285,15 @@ export default function App() {
         filters.difficulty = dm[selectedDifficulty]
       }
       if (selectedType !== 'all') filters.type = selectedType
-      if (searchKeyword) filters.search = searchKeyword
 
-      let data: any[]
-      if (isGaokao) {
+      // 语料缓存：key = 模式 + 筛选条件，条件没变就不重复打网络
+      // （增删改后必须 fetchQuestions(true) 强制重拉，否则会读到旧数据）
+      const keyword = searchKeyword.trim()
+      const corpusKey = JSON.stringify([bankMode, selectedCategory, selectedDifficulty, selectedType, selectedGrade])
+      const useCorpus = !fresh && searchCorpusRef.current.key === corpusKey
+
+      let data: any[] = []
+      if (!useCorpus && isGaokao) {
         // 高考模式：分批拉取（Supabase 单次上限 1000）
         let allData: any[] = []
         let from = 0
@@ -279,7 +310,6 @@ export default function App() {
           if (filterSubcategoryId) query = query.eq('subcategory', filterSubcategoryId)
           if (filters.difficulty) query = query.eq('difficulty', filters.difficulty)
           if (filters.type) query = query.eq('type', filters.type)
-          if (filters.search) query = query.ilike('content', `%${filters.search}%`)
           query = query.order('created_at', { ascending: false }).range(from, from + batchSize - 1)
           const res = await query
           if (res.error || !res.data || res.data.length === 0) break
@@ -288,7 +318,7 @@ export default function App() {
           from += batchSize
         }
         data = allData
-      } else {
+      } else if (!useCorpus) {
         // 普通模式排除 eq- 开头的题目（分批拉取，Supabase 单次上限 1000）
         let allNormal: any[] = []
         let nFrom = 0
@@ -304,7 +334,6 @@ export default function App() {
           }
           if (filters.difficulty) query = query.eq('difficulty', filters.difficulty)
           if (filters.type) query = query.eq('type', filters.type)
-          if (filters.search) query = query.ilike('content', `%${filters.search}%`)
           query = query.order('created_at', { ascending: false }).range(nFrom, nFrom + 999)
           const res = await query
           if (res.error || !res.data || res.data.length === 0) break
@@ -315,7 +344,27 @@ export default function App() {
         data = allNormal
       }
 
-      setQuestions(data.map(toFrontendQuestion))
+      // 已有更新的请求发出（关键词/筛选又变了），丢弃本次结果
+      if (seq !== fetchSeqRef.current) return
+
+      let corpus: any[]
+      if (useCorpus) {
+        corpus = searchCorpusRef.current.rows
+      } else {
+        corpus = data.map(toFrontendQuestion)
+        if (fresh) clearFieldCache()   // 增删改后按 id 缓存的字段可能过期，作废重算
+        searchCorpusRef.current = { key: corpusKey, rows: corpus }
+      }
+
+      if (keyword) {
+        // 智能搜索：软打分排序，命中越多排越前（题型/有图/年份/来源是硬条件）
+        const hits = searchQuestions(corpus, parseQuery(keyword))
+        setSearchHits(Object.fromEntries(hits.map((h) => [h.q.id, { hits: h.hits, misses: h.misses }])))
+        setQuestions(hits.map((h) => h.q))
+      } else {
+        setSearchHits({})
+        setQuestions(corpus)
+      }
     } catch (err) {
       console.error('加载试题失败:', err)
     }
@@ -379,8 +428,10 @@ export default function App() {
     fetchQuestions()
   }, [selectedCategory, selectedDifficulty, selectedType, selectedGrade])
 
-  // 搜索防抖
+  // 搜索防抖（首次挂载跳过：挂载时已由上面的 effect 拉过一次，避免重复整批下载）
+  const searchMountedRef = useRef(false)
   useEffect(() => {
+    if (!searchMountedRef.current) { searchMountedRef.current = true; return }
     const timer = setTimeout(() => {
       setCurrentPage(1)
       fetchQuestions()
@@ -496,7 +547,7 @@ export default function App() {
       await supabaseUpdateQuestion(qid, { analysis: aiPreviewContent })
       setAiPreviewQid(null)
       setAiPreviewContent('')
-      fetchQuestions()
+      fetchQuestions(true)
     } catch (err: any) {
       alert('保存失败：' + (err.message || '未知错误'))
     }
@@ -810,8 +861,8 @@ export default function App() {
       setEditImages(new Map())
       setEditingQuestion(null)
       setEditTab('content')
-      
-      fetchQuestions()
+
+      fetchQuestions(true)
       alert('保存成功！')
     } catch (err) {
       alert('保存失败')
@@ -891,7 +942,7 @@ export default function App() {
     if (!confirm('确定要删除这道题吗？')) return
     try {
       await supabaseDeleteQuestion(id)
-      fetchQuestions()
+      fetchQuestions(true)
       setBasket(prev => prev.filter(bid => bid !== id))
     } catch (err) {
       alert('删除失败')
@@ -1141,7 +1192,7 @@ export default function App() {
       setBatchQuestions([])
       setBatchSelectedIds(new Set())
       setBatchCategory('')
-      fetchQuestions()
+      fetchQuestions(true)
     } catch (err: any) {
       alert('保存失败：' + (err.message || '未知错误'))
     } finally {
@@ -1393,7 +1444,7 @@ export default function App() {
                 </div>
                 <input
                   type="text"
-                  placeholder="搜索题目内容、标签..."
+                  placeholder="智能搜索：椭圆 离心率 类型:解答 有图 -抛物线（多条件软匹配，命中的排前面）"
                   value={searchKeyword}
                   onChange={e => setSearchKeyword(e.target.value)}
                   style={{
@@ -1405,6 +1456,9 @@ export default function App() {
                     boxSizing: 'border-box'
                   }}
                 />
+                <div style={{ fontSize: 12, color: '#aaa', marginTop: 6 }}>
+                  可组合：<code>类型:填空</code> <code>有图</code> <code>年份:2024</code> <code>-排除词</code> <code>A|B</code>（任选其一）
+                </div>
               </div>
 
               {/* 题目列表 */}
@@ -1493,6 +1547,7 @@ export default function App() {
                           {isAdmin && <button onClick={() => handleDelete(q.id)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 4, border: '0.5px solid #fcc', background: '#fee', color: '#c33', cursor: 'pointer' }}>删除</button>}
                         </div>
                       </div>
+                      {renderSearchChips(q.id)}
                       {(() => {
                         // 若已通过 options 数组单独渲染选项，则从 content 中剥离 \item 行和 \img{}，避免重复显示
                         // \img{} 抽出来放到选项**后面**渲染，不在题目和选项之间
